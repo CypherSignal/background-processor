@@ -1,1 +1,1 @@
-start Local/ispc_helloworld.sln
+start Local/background-processor.sln

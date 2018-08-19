@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-file(GLOB_RECURSE ispc_helloworld_src
+file(GLOB_RECURSE background-processor_src
 	"*.h"	
 	"*.cpp"
 )
@@ -61,7 +61,7 @@ FOREACH (src ${ispc_files})
 	ENDIF()
 ENDFOREACH()
 
-add_executable(ispc_helloworld ${ispc_helloworld_src} ${ispc_files} ${ispc_out_headers})
+add_executable(background-processor ${background-processor_src} ${ispc_files} ${ispc_out_headers})
 source_group("Source Files\\ispc" FILES ${ispc_files})
 
 
@@ -86,7 +86,7 @@ add_definitions(-DEASTL_EASTDC_VSNPRINTF=0)
 # Compiler Flags
 #-------------------------------------------------------------------------------------------
 if (MSVC)
-	set_target_properties(ispc_helloworld PROPERTIES COMPILE_FLAGS "/YuPch.h")
+	set_target_properties(background-processor PROPERTIES COMPILE_FLAGS "/YuPch.h")
 	set_source_files_properties(Pch.cpp PROPERTIES COMPILE_FLAGS "/YcPch.h")
 endif(MSVC)
 
@@ -99,8 +99,8 @@ include_directories(${ispc_out_dirs})
 #-------------------------------------------------------------------------------------------
 # Libraries
 #-------------------------------------------------------------------------------------------
-target_link_libraries(ispc_helloworld EASTL)
-target_link_libraries(ispc_helloworld ${ispc_out_objs} )
+target_link_libraries(background-processor EASTL)
+target_link_libraries(background-processor ${ispc_out_objs} )
 
 #-------------------------------------------------------------------------------------------
 # Installation
