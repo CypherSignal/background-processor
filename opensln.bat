@@ -1,0 +1,1 @@
+start Local/ispc_helloworld.sln
