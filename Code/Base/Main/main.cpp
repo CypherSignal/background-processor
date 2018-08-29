@@ -1,7 +1,9 @@
 #include "Pch.h"
 
 #include <External/flags/include/flags.h>
-#include <Main\imageio.h>
+
+#include <Main/imageio.h>
+#include <Main/imageprocess.h>
 
 int main(int argc, char** argv)
 {
@@ -23,14 +25,23 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	std::filesystem::path inFilePath = inFile.value();
+	std::filesystem::path outDirPath = outDir.value();
+
 	// load image in
-	Image img = loadImage(inFile.value());
+	Image img = loadImage(inFilePath);
 
 	// do processing on it
+	Image processedImg = processImage(img);
 
 	// write out raw as png
-	// write out raw as snes binary data
+	std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".png");
+	saveImage(processedImg, outPngPath);
+
 	// write out ntsc-processed png
+
+
+	// write out raw as snes binary data
 
 	return 0;
 }
