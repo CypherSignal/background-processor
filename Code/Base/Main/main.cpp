@@ -2,8 +2,9 @@
 
 #include <External/flags/include/flags.h>
 
-#include <Main/imageio.h>
-#include <Main/imageprocess.h>
+#include <Main/imageIo.h>
+#include <Main/imageNtscFilter.h>
+#include <Main/imageProcess.h>
 
 int main(int argc, char** argv)
 {
@@ -33,13 +34,19 @@ int main(int argc, char** argv)
 
 	// do processing on it
 	Image processedImg = processImage(img);
+	Image ntscFilteredImg = applyNtscFilter(processedImg);
 
 	// write out raw as png
-	std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".png");
-	saveImage(processedImg, outPngPath);
+	{
+		std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".png");
+		saveImage(processedImg, outPngPath);
+	}
 
 	// write out ntsc-processed png
-
+	{
+		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.png");
+		saveImage(ntscFilteredImg, outFilteredPngPath);
+	}
 
 	// write out raw as snes binary data
 
