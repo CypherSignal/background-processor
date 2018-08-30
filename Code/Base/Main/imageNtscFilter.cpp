@@ -58,13 +58,11 @@ Image applyNtscFilter(const Image& img)
 				outImg.imgData[outImgIdx].b = filteredData[filteredImgIdx + 0];
 				outImg.imgData[outImgIdx].g = filteredData[filteredImgIdx + 1];
 				outImg.imgData[outImgIdx].r = filteredData[filteredImgIdx + 2];
-				outImg.imgData[outImgIdx].a = 255;
 
 				outImgIdx += outImgWidth;
 				outImg.imgData[outImgIdx].b = filteredData[filteredImgIdx + 0];
 				outImg.imgData[outImgIdx].g = filteredData[filteredImgIdx + 1];
 				outImg.imgData[outImgIdx].r = filteredData[filteredImgIdx + 2];
-				outImg.imgData[outImgIdx].a = 255;
 			}
 		}
 	}
