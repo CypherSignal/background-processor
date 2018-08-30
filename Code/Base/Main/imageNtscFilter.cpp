@@ -26,8 +26,7 @@ Image applyNtscFilter(const Image& img)
 		
 		while (srcImgIter != srcImgIterEnd)
 		{
-			// TODO: this quantization of the colours is bad. Rounds down all of the time.
-			unsigned short snesPx = ((srcImgIter->r & 0xf8) << 8) | ((srcImgIter->g & 0xfc) << 3) | (srcImgIter->b & 0xf8) >> 3;
+			unsigned short snesPx = ((srcImgIter->r & 0xf8) >> 3) | ((srcImgIter->g & 0xf8) << 2) | ((srcImgIter->b & 0xf8) << 7);
 			(*snesImgIter) = snesPx;
 
 			srcImgIter++;
