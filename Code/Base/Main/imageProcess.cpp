@@ -119,10 +119,6 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 			break;
 		};
 
-		// if the find_if for a new medianIter failed, it's because
-		if (medianIter == bucketIter->first)
-			continue;
-
 		// split the bucket about the median
 		bucketRanges.push_back(make_pair(medianIter, bucketIter->second));
 
