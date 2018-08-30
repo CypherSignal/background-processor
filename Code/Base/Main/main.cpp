@@ -33,8 +33,12 @@ int main(int argc, char** argv)
 	Image img = loadImage(inFilePath);
 
 	// do processing on it
-	Image processedImg = processImage(img);
-	Image ntscFilteredImg = applyNtscFilter(processedImg);
+	ProcessImageParams processImageParams;
+	processImageParams.lowBitDepthPalette = false;
+	processImageParams.maxColors = 128;
+	
+	Image processedImg = processImage(img, processImageParams);
+	
 
 	// write out raw as png
 	{
@@ -44,6 +48,7 @@ int main(int argc, char** argv)
 
 	// write out ntsc-processed png
 	{
+		Image ntscFilteredImg = applyNtscFilter(processedImg);
 		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.png");
 		saveImage(ntscFilteredImg, outFilteredPngPath);
 	}
