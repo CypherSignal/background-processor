@@ -7,13 +7,21 @@
 
 #include <External/blargg_ntsc/snes_ntsc.c>
 
+
 Image applyNtscFilter(const Image& img)
 {
-	snes_ntsc_t* snesNtscObj = new snes_ntsc_t;
+	struct SnesNtscObject
+	{
+		SnesNtscObject()
+		{
+			m_ntscConfig = new snes_ntsc_t;
+			snes_ntsc_setup_t setup = snes_ntsc_svideo;
+			snes_ntsc_init(m_ntscConfig, &setup);
+		}
+		snes_ntsc_t* m_ntscConfig;
+	};
 
-	snes_ntsc_setup_t setup;
-	setup = snes_ntsc_svideo;
-	snes_ntsc_init(snesNtscObj, &setup);
+	static SnesNtscObject snesNtscObj;
 
 	// prep the data for input into the ntsc filter
 	eastl::vector<unsigned short> snesImgData;
@@ -38,8 +46,7 @@ Image applyNtscFilter(const Image& img)
 	eastl::vector<char> filteredData;
 	int outImgWidth = SNES_NTSC_OUT_WIDTH(img.width);
 	filteredData.resize(outImgWidth * img.height * 2 * 4); // times 2 because it's doubling height; times 4 because output is 4Bpp
-	snes_ntsc_blit(snesNtscObj, snesImgData.data(), img.width, 0, img.width, img.height, filteredData.data(), outImgWidth * 4);
-	delete snesNtscObj;
+	snes_ntsc_blit(snesNtscObj.m_ntscConfig, snesImgData.data(), img.width, 0, img.width, img.height, filteredData.data(), outImgWidth * 4);
 
 	// scale up data and prepare it for usage as an image
 	Image outImg;

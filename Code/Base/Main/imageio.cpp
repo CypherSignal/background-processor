@@ -43,12 +43,46 @@ Image loadImage(const std::filesystem::path& filename)
 
 void saveImage(const Image& img, const std::filesystem::path& file)
 {
-	stbi_write_png(file.generic_string().c_str(), img.width, img.height, img.comp, img.imgData.data(), 0);
+	eastl::vector<unsigned char> buffer;
+	buffer.reserve(img.imgData.size() * 4);
+
+	auto writeFunc = [](void* context, void* data, int size) {
+		auto buf = static_cast<eastl::vector<unsigned char>*>(context);
+		auto oldSize = buf->size();
+		buf->resize(oldSize + size);
+		memcpy(buf->data() + oldSize, data, size);
+	};
+
+	stbi_write_bmp_to_func(writeFunc, &buffer, img.width, img.height, img.comp, img.imgData.data());
+
+	FILE* out;
+	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
+	{
+		fwrite(buffer.data(), sizeof(unsigned char), buffer.size(), out);
+		fclose(out);
+	}
 }
 
 void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsigned int height, const std::filesystem::path& file)
 {
-	stbi_write_png(file.generic_string().c_str(), width, height, 1, pltImg.img.data(), 0);
+	eastl::vector<unsigned char> buffer;
+	buffer.reserve(pltImg.img.size() * 2);
+
+	auto writeFunc = [](void* context, void* data, int size) {
+		auto buf = static_cast<eastl::vector<unsigned char>*>(context);
+		auto oldSize = buf->size();
+		buf->resize(oldSize + size);
+		memcpy(buf->data() + oldSize, data, size);
+	};
+
+	stbi_write_bmp_to_func(writeFunc, &buffer, width, height, 1, pltImg.img.data());
+
+	FILE* out;
+	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
+	{
+		fwrite(buffer.data(), sizeof(unsigned char), buffer.size(), out);
+		fclose(out);
+	}
 }
 
 void saveSnesPalette(eastl::fixed_vector<Color, 256, false>& palette, const std::filesystem::path& file)
