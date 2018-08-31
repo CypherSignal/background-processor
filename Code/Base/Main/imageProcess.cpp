@@ -13,14 +13,6 @@ Image processImage(const Image& img, const ProcessImageParams& params)
 {
 	Image processedImage = img;
 	
-	// we should always quantize the image to the SNES' palette first (5b per color)
-	for (auto& px : processedImage.imgData)
-	{
-		px.r &= 0xf8;
-		px.g &= 0xf8;
-		px.b &= 0xf8;
-	}
-
 	if (params.lowBitDepthPalette)
 	{
 		// todo
@@ -29,6 +21,15 @@ Image processImage(const Image& img, const ProcessImageParams& params)
 	{
 		quantizeToSinglePalette(processedImage, params.maxColors);
 	}
+
+	// quantize the image to the SNES' palette at the end
+	for (auto& px : processedImage.imgData)
+	{
+		px.r &= 0xf8;
+		px.g &= 0xf8;
+		px.b &= 0xf8;
+	}
+
 	return processedImage;
 }
 
@@ -89,13 +90,13 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 				channelToSort = 0;
 				bucketIter = deltaSearchIter;
 			}
-			else if (delta.g > maxDelta)
+			if (delta.g > maxDelta)
 			{
 				maxDelta = delta.g;
 				channelToSort = 1;
 				bucketIter = deltaSearchIter;
 			}
-			else if (delta.b > maxDelta)
+			if (delta.b > maxDelta)
 			{
 				maxDelta = delta.b;
 				channelToSort = 2;
