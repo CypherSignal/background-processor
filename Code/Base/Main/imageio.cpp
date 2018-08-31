@@ -100,7 +100,7 @@ void saveSnesPalette(eastl::fixed_vector<Color, 256, false>& palette, const std:
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
 	{
-		fwrite(snesPlt.data(), sizeof(unsigned short), 256, out);
+		fwrite(snesPlt.data(), sizeof(unsigned short), snesPlt.size(), out);
 		fclose(out);
 	}
 }
@@ -111,7 +111,8 @@ void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsign
 	{
 		unsigned char data[64];
 	};
-	eastl::fixed_vector<Tile, 896, false> snesTiles;
+	const unsigned int MaxTiles = (256 / 8) * (224 / 8) + 1; // +1 to have an empty black tile
+	eastl::fixed_vector<Tile, MaxTiles, false> snesTiles; // 897 
 	snesTiles.resize(((width + 7) / 8) * ((height + 7) / 8));
 
 	// transform the chars in img to an 8x8 tile, then resort the data as a bitplane
@@ -122,6 +123,8 @@ void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsign
 			snesTiles[(i / 8) * (width / 8) + j / 8].data[(i % 8) * 8 + j % 8] = img[i * width + j];
 		}
 	}
+
+	snesTiles.push_back();
 	for (auto& snesTile : snesTiles)
 	{
 		Tile srcTile = snesTile;
@@ -164,26 +167,30 @@ void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsign
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
 	{
-		fwrite(snesTiles.data(), sizeof(Tile), 896, out);
+		fwrite(snesTiles.data(), sizeof(Tile), snesTiles.size(), out);
 		fclose(out);
 	}
 }
 
 void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesystem::path& file)
 {
-	eastl::fixed_vector<unsigned short, 896, false> snesTilemap;
-	snesTilemap.resize(((width + 7) / 8) * ((height + 7) / 8));
-
+	const unsigned int MaxTiles = (256 / 8) * (224 / 8);
+	eastl::fixed_vector<unsigned short, MaxTiles, false> snesTilemap;
+	snesTilemap.resize(MaxTiles, ((width + 7) / 8) * ((height + 7) / 8));
+	
 	unsigned short tileNumber = 0;
-	for (auto& tilemapIter : snesTilemap)
+	for (unsigned int i = 0; i < height / 8; ++i)
 	{
-		tilemapIter = tileNumber++;
+		for (unsigned int j = 0; j < width / 8; ++j)
+		{
+			snesTilemap[i * 32 + j] = tileNumber++;
+		}
 	}
 
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
 	{
-		fwrite(snesTilemap.data(), sizeof(unsigned short), 896, out);
+		fwrite(snesTilemap.data(), sizeof(unsigned short), snesTilemap.size(), out);
 		fclose(out);
 	}
 }
