@@ -7,11 +7,11 @@
 
 using namespace eastl;
 
-void quantizeToSinglePalette(Image& img, int maxColors);
+void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutParams& out);
 
-Image processImage(const Image& img, const ProcessImageParams& params)
+void processImage(const ProcessImageParams& params, ProcessImageOutParams& out)
 {
-	Image processedImage = img;
+	out.img = params.img;
 	
 	if (params.lowBitDepthPalette)
 	{
@@ -19,22 +19,13 @@ Image processImage(const Image& img, const ProcessImageParams& params)
 	}
 	else
 	{
-		quantizeToSinglePalette(processedImage, params.maxColors);
+		quantizeToSinglePalette(params, out);
 	}
-
-	// quantize the image to the SNES' palette at the end
-	for (auto& px : processedImage.imgData)
-	{
-		px.r &= 0xf8;
-		px.g &= 0xf8;
-		px.b &= 0xf8;
-	}
-
-	return processedImage;
 }
 
-template<typename Iterator>
-Color calculateColorDelta(Iterator begin, Iterator end)
+typedef vector<pair<Color, unsigned int>> IndexedImageData;
+typedef IndexedImageData::iterator IndexedImageDataIterator;
+Color calculateColorDelta(IndexedImageDataIterator begin, IndexedImageDataIterator end)
 {
 	// find which channel has most variance
 	Color lowestChannels{ 255,255,255 };
@@ -55,30 +46,45 @@ Color calculateColorDelta(Iterator begin, Iterator end)
 	return delta;
 }
 
-template<typename Iterator>
-void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
+void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutParams& out)
 {
+	// copy the src image data into an array that will let us track how it gets sorted and reordered
 	struct BucketRange
 	{
-		Iterator begin;
-		Iterator end;
+		IndexedImageDataIterator begin;
+		IndexedImageDataIterator end;
 		Color colorDelta;
+
+		void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end)
+		{
+			begin = _begin;
+			end = _end;
+			colorDelta = calculateColorDelta(begin, end);
+		}
 	};
-	vector<BucketRange> bucketRanges;
-	bucketRanges.reserve(colorsToFind);
+
+	IndexedImageData indexedImageData;
+	indexedImageData.reserve(params.img.imgData.size());
+	
+	unsigned int idx = 0;
+	for (auto px : params.img.imgData)
 	{
-		BucketRange& newRange = bucketRanges.push_back();
-		newRange.begin = imgBegin;
-		newRange.end = imgEnd;
-		newRange.colorDelta = calculateColorDelta(imgBegin, imgEnd);
+		indexedImageData.push_back(make_pair(px, idx));
+		++idx;
 	}
 
-	auto bucketRangeIter = bucketRanges.begin();
+	vector<BucketRange> bucketRanges;
+	auto colorsToFind = min(params.maxColors - 1, 255); // we only support 256 colors, minus 1 for the 0th color
+	bucketRanges.reserve(colorsToFind);
+	BucketRange& newRange = bucketRanges.push_back();
+	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end());
 
+	// bucket all of the colours by finding which bucket has the greatest delta across each channel,
+	// and split the bucket about the median color of each bucket
+	// in the end, bucketRanges should have colorsToFind number of buckets, and each should be a unique range
 	while (bucketRanges.size() < colorsToFind)
 	{
-		// first, find which bucket has the greatest delta across all of the rgb channels: that's the one to split
-		vector<BucketRange>::iterator bucketIter = bucketRanges.begin();
+		auto bucketIter = bucketRanges.begin();
 		unsigned char maxDelta = 0;
 		int channelToSort = 0;
 		for (auto deltaSearchIter = bucketRanges.begin(); deltaSearchIter != bucketRanges.end(); ++deltaSearchIter)
@@ -104,8 +110,11 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 			}
 		}
 
-		Iterator medianIter;
+		IndexedImageDataIterator medianIter;
 		unsigned char medianColor;
+
+		// TODO - this sorting of buckets is by far the most costly part of the algorithm now.
+		// TODO - Ultimately it only tries to find a median color - look at median-of-medians algorithm to find medianColor, and partition around that value
 		switch (channelToSort)
 		{
 		case 0:
@@ -137,21 +146,17 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 			break;
 		};
 
-		// split the bucket about the median
-		{
-			BucketRange& newRange = bucketRanges.push_back();
-			newRange.begin = medianIter;
-			newRange.end = bucketIter->end;
-			newRange.colorDelta = calculateColorDelta(medianIter, bucketIter->end);
-		}
-
-		// and shift the current bucketrange down correspondingly
-		bucketIter->end = medianIter;
-		bucketIter->colorDelta = calculateColorDelta(bucketIter->begin, medianIter);
+		// split the bucket about the median, and shift the current bucketrange down correspondingly
+		BucketRange& newRange = bucketRanges.push_back();
+		newRange.setBucketRange(medianIter, bucketIter->end);
+		
+		bucketIter->setBucketRange(bucketIter->begin, medianIter);
 	}
-	
-	vector<Color> bucketColors;
-	// once we have all of the buckets, calculate appropriate averages
+
+	// now that the colors have been bucketed, calculate the avg color of each bucket to determine the image's palette 
+	out.palettizedImage.img.resize(params.img.imgData.size());
+	out.palettizedImage.palette.clear();
+	out.palettizedImage.palette.push_back(); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
 	{
 		// calculate the average in the provided bucket, and update all values to that one
@@ -168,37 +173,17 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 
 		Color averageColor;
 		size_t bucketSize = bucket.end - bucket.begin;
-		averageColor.r = unsigned char(accumulatedR / bucketSize);
-		averageColor.g = unsigned char(accumulatedG / bucketSize);
-		averageColor.b = unsigned char(accumulatedB / bucketSize);
+		averageColor.r = unsigned char(accumulatedR / bucketSize) & 0xf8; // mask to 0xf8 to match snes limitations
+		averageColor.g = unsigned char(accumulatedG / bucketSize) & 0xf8;
+		averageColor.b = unsigned char(accumulatedB / bucketSize) & 0xf8;
+
+		auto paletteIdx = (unsigned char)(out.palettizedImage.palette.size());
+		out.palettizedImage.palette.push_back(averageColor);
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
-			pxIter->first = averageColor;
+			out.palettizedImage.img[pxIter->second] = paletteIdx;
+			out.img.imgData[pxIter->second] = averageColor;
 		}
-		bucketColors.push_back(averageColor);
-	}
-}
-
-void quantizeToSinglePalette(Image& img, int maxColors)
-{
-	// median cut algorithm to find palette
-	vector<pair<Color, unsigned int>> imageDataWithIndex;
-	imageDataWithIndex.reserve(img.imgData.size());
-	
-	unsigned int idx = 0;
-	for (auto px : img.imgData)
-	{
-		imageDataWithIndex.push_back(make_pair(px, idx));
-		++idx;
-	}
-
-	// bucket the colors and generate a list of colors
-	colorBucketPartition(imageDataWithIndex.begin(), imageDataWithIndex.end(), maxColors);
-
-	// now that imageDataWithIndex is sorted, map the colours it has back to the imgData
-	for (auto indexedData : imageDataWithIndex)
-	{
-		img.imgData[indexedData.second] = indexedData.first;
 	}
 }
 

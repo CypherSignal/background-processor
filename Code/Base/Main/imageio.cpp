@@ -43,3 +43,8 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 {
 	stbi_write_png(file.generic_string().c_str(), img.width, img.height, img.comp, img.imgData.data(), 0);
 }
+
+void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsigned int height, const std::filesystem::path& file)
+{
+	stbi_write_png(file.generic_string().c_str(), width, height, 1, pltImg.img.data(), 0);
+}

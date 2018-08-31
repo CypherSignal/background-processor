@@ -1,5 +1,6 @@
 #pragma once
 
+#include <EASTL/fixed_vector.h>
 #include <EASTL/vector.h>
 
 struct Color
@@ -15,4 +16,8 @@ struct Image
 	eastl::vector<Color> imgData;
 };
 
-
+struct PalettizedImage
+{
+	eastl::fixed_vector<Color, 256, false> palette;
+	eastl::vector<unsigned char> img;
+};

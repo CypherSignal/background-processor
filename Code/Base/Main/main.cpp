@@ -29,31 +29,35 @@ int main(int argc, char** argv)
 	std::filesystem::path inFilePath = inFile.value();
 	std::filesystem::path outDirPath = outDir.value();
 
-	// load image in
-	Image img = loadImage(inFilePath);
-
-	// do processing on it
+	ProcessImageOutParams outParams;
 	ProcessImageParams processImageParams;
 	processImageParams.lowBitDepthPalette = false;
-	processImageParams.maxColors = 128;
-	
-	Image processedImg = processImage(img, processImageParams);
-	
+	processImageParams.maxColors = 64;
+
+	// load image in and process it according to parameters set above
+	processImageParams.img = loadImage(inFilePath);
+
+	processImage(processImageParams, outParams);
 
 	// write out raw as png
 	{
-		std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".png");
-		saveImage(processedImg, outPngPath);
+		std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".bmp");
+		saveImage(outParams.img, outPngPath);
 	}
 
 	// write out ntsc-processed png
 	{
-		Image ntscFilteredImg = applyNtscFilter(processedImg);
-		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.png");
+		Image ntscFilteredImg = applyNtscFilter(outParams.img);
+		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.bmp");
 		saveImage(ntscFilteredImg, outFilteredPngPath);
 	}
 
+	// write out palette information
+	{
+		std::filesystem::path outPltImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-pltidx.bmp");
+		savePalettizedImage(outParams.palettizedImage, outParams.img.width, outParams.img.height, outPltImgPath);
+	}
 	// write out raw as snes binary data
-
+	
 	return 0;
 }

@@ -12,4 +12,9 @@
 #include <tchar.h>
 #include <windows.h>
 
+#include <EASTL/fixed_vector.h>
+#include <EASTL/sort.h>
+#include <EASTL/utility.h>
+#include <EASTL/vector.h>
+
 // TODO: reference additional headers your program requires here
