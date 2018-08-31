@@ -41,23 +41,34 @@ int main(int argc, char** argv)
 
 	// write out raw as png
 	{
-		std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".bmp");
+		std::filesystem::path outPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".png");
 		saveImage(outParams.img, outPngPath);
 	}
 
 	// write out ntsc-processed png
 	{
 		Image ntscFilteredImg = applyNtscFilter(outParams.img);
-		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.bmp");
+		std::filesystem::path outFilteredPngPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-filtered.png");
 		saveImage(ntscFilteredImg, outFilteredPngPath);
 	}
 
 	// write out palette information
 	{
-		std::filesystem::path outPltImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-pltidx.bmp");
+		std::filesystem::path outPltImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat("-pltidx.png");
 		savePalettizedImage(outParams.palettizedImage, outParams.img.width, outParams.img.height, outPltImgPath);
 	}
+
 	// write out raw as snes binary data
-	
+	{
+		std::filesystem::path outSnesPltImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".clr");
+		saveSnesPalette(outParams.palettizedImage.palette, outSnesPltImgPath);
+
+		std::filesystem::path outSnesTileImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".pic");
+		saveSnesTiles(outParams.palettizedImage.img, outParams.img.width, outParams.img.height, outSnesTileImgPath);
+
+		std::filesystem::path outSnesMapImgPath = std::filesystem::path(outDirPath) / inFilePath.stem().concat(".map");
+		saveSnesTilemap(outParams.img.width, outParams.img.height, outSnesMapImgPath);
+
+	}
 	return 0;
 }

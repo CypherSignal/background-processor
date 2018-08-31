@@ -5,6 +5,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <External/stb/stb_image.h>
 
+#define STBI_MSC_SECURE_CRT
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <External/stb/stb_image_write.h>
 
@@ -47,4 +49,107 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsigned int height, const std::filesystem::path& file)
 {
 	stbi_write_png(file.generic_string().c_str(), width, height, 1, pltImg.img.data(), 0);
+}
+
+void saveSnesPalette(eastl::fixed_vector<Color, 256, false>& palette, const std::filesystem::path& file)
+{
+	eastl::fixed_vector<unsigned short, 256, false> snesPlt(palette.size());
+
+	auto snesPltIter = snesPlt.begin();
+	for (auto srcPltIter : palette)
+	{
+		unsigned short snesColor = ((srcPltIter.b & 0xf8) << 7) | ((srcPltIter.g & 0xf8) << 2) | ((srcPltIter.r & 0xf8) >> 3);
+		(*snesPltIter) = snesColor;
+		++snesPltIter;
+	}
+	
+	FILE* out;
+	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
+	{
+		fwrite(snesPlt.data(), sizeof(unsigned short), 256, out);
+		fclose(out);
+	}
+}
+
+void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsigned int height, const std::filesystem::path& file)
+{
+	struct Tile
+	{
+		unsigned char data[64];
+	};
+	eastl::fixed_vector<Tile, 896, false> snesTiles;
+	snesTiles.resize(((width + 7) / 8) * ((height + 7) / 8));
+
+	// transform the chars in img to an 8x8 tile, then resort the data as a bitplane
+	for (unsigned int i = 0; i < height; ++i)
+	{
+		for (unsigned int j = 0; j < width; ++j)
+		{
+			snesTiles[(i / 8) * (width / 8) + j / 8].data[(i % 8) * 8 + j % 8] = img[i * width + j];
+		}
+	}
+	for (auto& snesTile : snesTiles)
+	{
+		Tile srcTile = snesTile;
+
+		unsigned int tileIdx = 0;
+		for (unsigned int bitplane = 0; bitplane < 8; bitplane += 2)
+		{
+			for (unsigned int k = 0; k < 8; ++k)
+			{
+				unsigned int mask = (1 << bitplane);
+				snesTile.data[tileIdx] = (
+					((srcTile.data[k * 8 + 0] & mask) << 7) |
+					((srcTile.data[k * 8 + 1] & mask) << 6) |
+					((srcTile.data[k * 8 + 2] & mask) << 5) |
+					((srcTile.data[k * 8 + 3] & mask) << 4) |
+					((srcTile.data[k * 8 + 4] & mask) << 3) |
+					((srcTile.data[k * 8 + 5] & mask) << 2) |
+					((srcTile.data[k * 8 + 6] & mask) << 1) |
+					((srcTile.data[k * 8 + 7] & mask) << 0)
+					) >> bitplane;
+
+				tileIdx++;
+				mask <<= 1;
+
+				snesTile.data[tileIdx] = (
+					((srcTile.data[k * 8 + 0] & mask) << 7) |
+					((srcTile.data[k * 8 + 1] & mask) << 6) |
+					((srcTile.data[k * 8 + 2] & mask) << 5) |
+					((srcTile.data[k * 8 + 3] & mask) << 4) |
+					((srcTile.data[k * 8 + 4] & mask) << 3) |
+					((srcTile.data[k * 8 + 5] & mask) << 2) |
+					((srcTile.data[k * 8 + 6] & mask) << 1) |
+					((srcTile.data[k * 8 + 7] & mask) >> 0)
+					) >> (bitplane + 1);
+				tileIdx++;
+			}
+		}
+	}
+
+	FILE* out;
+	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
+	{
+		fwrite(snesTiles.data(), sizeof(Tile), 896, out);
+		fclose(out);
+	}
+}
+
+void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesystem::path& file)
+{
+	eastl::fixed_vector<unsigned short, 896, false> snesTilemap;
+	snesTilemap.resize(((width + 7) / 8) * ((height + 7) / 8));
+
+	unsigned short tileNumber = 0;
+	for (auto& tilemapIter : snesTilemap)
+	{
+		tilemapIter = tileNumber++;
+	}
+
+	FILE* out;
+	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
+	{
+		fwrite(snesTilemap.data(), sizeof(unsigned short), 896, out);
+		fclose(out);
+	}
 }
