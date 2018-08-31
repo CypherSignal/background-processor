@@ -30,59 +30,76 @@ Image processImage(const Image& img, const ProcessImageParams& params)
 		quantizeToSinglePalette(processedImage, params.maxColors);
 	}
 	return processedImage;
+}
 
+template<typename Iterator>
+Color calculateColorDelta(Iterator begin, Iterator end)
+{
+	// find which channel has most variance
+	Color lowestChannels{ 255,255,255 };
+	Color highestChannels{ 0,0,0 };
+	for (auto pxIter = begin; pxIter != end; ++pxIter)
+	{
+		lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
+		lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
+		lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
+		highestChannels.r = max(pxIter->first.r, highestChannels.r);
+		highestChannels.g = max(pxIter->first.g, highestChannels.g);
+		highestChannels.b = max(pxIter->first.b, highestChannels.b);
+	}
+	Color delta;
+	delta.r = highestChannels.r - lowestChannels.r;
+	delta.g = highestChannels.g - lowestChannels.g;
+	delta.b = highestChannels.b - lowestChannels.b;
+	return delta;
 }
 
 template<typename Iterator>
 void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 {
-	vector<pair<Iterator, Iterator>> bucketRanges;
+	struct BucketRange
+	{
+		Iterator begin;
+		Iterator end;
+		Color colorDelta;
+	};
+	vector<BucketRange> bucketRanges;
 	bucketRanges.reserve(colorsToFind);
-	bucketRanges.push_back(make_pair(imgBegin, imgEnd));
+	{
+		BucketRange& newRange = bucketRanges.push_back();
+		newRange.begin = imgBegin;
+		newRange.end = imgEnd;
+		newRange.colorDelta = calculateColorDelta(imgBegin, imgEnd);
+	}
+
 	auto bucketRangeIter = bucketRanges.begin();
 
 	while (bucketRanges.size() < colorsToFind)
 	{
 		// first, find which bucket has the greatest delta across all of the rgb channels: that's the one to split
-		vector<pair<Iterator, Iterator>>::iterator bucketIter = bucketRanges.begin();
+		vector<BucketRange>::iterator bucketIter = bucketRanges.begin();
 		unsigned char maxDelta = 0;
 		int channelToSort = 0;
-		for (auto bucketSearchIter = bucketRanges.begin(); bucketSearchIter != bucketRanges.end(); ++bucketSearchIter)
+		for (auto deltaSearchIter = bucketRanges.begin(); deltaSearchIter != bucketRanges.end(); ++deltaSearchIter)
 		{
-			// find which channel has most variance
-			Color lowestChannels{ 255,255,255 };
-			Color highestChannels{ 0,0,0 };
-			// TODO: Each bucket is having its delta recomputed here. Would be good if we could cache this
-			for (auto pxIter = bucketSearchIter->first; pxIter != bucketSearchIter->second; ++pxIter)
+			Color delta = deltaSearchIter->colorDelta;
+			if (delta.r > maxDelta)
 			{
-				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
-				lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
-				lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
-				highestChannels.r = max(pxIter->first.r, highestChannels.r);
-				highestChannels.g = max(pxIter->first.g, highestChannels.g);
-				highestChannels.b = max(pxIter->first.b, highestChannels.b);
-			}
-			unsigned char deltaR = highestChannels.r - lowestChannels.r;
-			unsigned char deltaG = highestChannels.g - lowestChannels.g;
-			unsigned char deltaB = highestChannels.b - lowestChannels.b;
-
-			if (deltaR > maxDelta)
-			{
-				maxDelta = deltaR;
+				maxDelta = delta.r;
 				channelToSort = 0;
-				bucketIter = bucketSearchIter;
+				bucketIter = deltaSearchIter;
 			}
-			else if (deltaG > maxDelta)
+			else if (delta.g > maxDelta)
 			{
-				maxDelta = deltaG;
+				maxDelta = delta.g;
 				channelToSort = 1;
-				bucketIter = bucketSearchIter;
+				bucketIter = deltaSearchIter;
 			}
-			else if (deltaB > maxDelta)
+			else if (delta.b > maxDelta)
 			{
-				maxDelta = deltaB;
+				maxDelta = delta.b;
 				channelToSort = 2;
-				bucketIter = bucketSearchIter;
+				bucketIter = deltaSearchIter;
 			}
 		}
 
@@ -92,53 +109,56 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 		{
 		case 0:
 			// sort around red
-			sort(bucketIter->first, bucketIter->second, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.r < b.first.r; });
-			medianColor = (bucketIter->first + ((bucketIter->second - bucketIter->first) / 2))->first.r;
-			medianIter = find_if(bucketIter->first, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r == medianColor; });
+			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.r < b.first.r; });
+			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.r;
+			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r == medianColor; });
 			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->first)
-				medianIter = find_if(medianIter, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r != medianColor; });
+			if (medianIter == bucketIter->begin)
+				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r != medianColor; });
 			break;
 		case 1:
 			// sort around green
-			sort(bucketIter->first, bucketIter->second, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.g < b.first.g; });
-			medianColor = (bucketIter->first + ((bucketIter->second - bucketIter->first) / 2))->first.g;
-			medianIter = find_if(bucketIter->first, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g == medianColor; });
+			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.g < b.first.g; });
+			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.g;
+			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g == medianColor; });
 			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->first)
-				medianIter = find_if(medianIter, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g != medianColor; });
+			if (medianIter == bucketIter->begin)
+				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g != medianColor; });
 			break;
 		case 2:
 			// sort around blue
-			sort(bucketIter->first, bucketIter->second, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.b < b.first.b; });
-			medianColor = (bucketIter->first + ((bucketIter->second - bucketIter->first) / 2))->first.b;
-			medianIter = find_if(bucketIter->first, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b == medianColor; });
+			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.b < b.first.b; });
+			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.b;
+			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b == medianColor; });
 			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->first)
-				medianIter = find_if(medianIter, bucketIter->second, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b != medianColor; });
+			if (medianIter == bucketIter->begin)
+				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b != medianColor; });
 			break;
 		};
 
 		// split the bucket about the median
-		bucketRanges.push_back(make_pair(medianIter, bucketIter->second));
+		{
+			BucketRange& newRange = bucketRanges.push_back();
+			newRange.begin = medianIter;
+			newRange.end = bucketIter->end;
+			newRange.colorDelta = calculateColorDelta(medianIter, bucketIter->end);
+		}
 
 		// and shift the current bucketrange down correspondingly
-		bucketIter->second = medianIter;
+		bucketIter->end = medianIter;
+		bucketIter->colorDelta = calculateColorDelta(bucketIter->begin, medianIter);
 	}
 	
 	vector<Color> bucketColors;
 	// once we have all of the buckets, calculate appropriate averages
 	for (auto bucket : bucketRanges)
 	{
-		if (bucket.first == bucket.second)
-			continue;
-
 		// calculate the average in the provided bucket, and update all values to that one
 		long accumulatedR = 0;
 		long accumulatedG = 0;
 		long accumulatedB = 0;
 
-		for (auto pxIter = bucket.first; pxIter != bucket.second; ++pxIter)
+		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
 			accumulatedR += pxIter->first.r;
 			accumulatedG += pxIter->first.g;
@@ -146,11 +166,11 @@ void colorBucketPartition(Iterator imgBegin, Iterator imgEnd, int colorsToFind)
 		}
 
 		Color averageColor;
-		size_t bucketSize = bucket.second - bucket.first;
+		size_t bucketSize = bucket.end - bucket.begin;
 		averageColor.r = unsigned char(accumulatedR / bucketSize);
 		averageColor.g = unsigned char(accumulatedG / bucketSize);
 		averageColor.b = unsigned char(accumulatedB / bucketSize);
-		for (auto pxIter = bucket.first; pxIter != bucket.second; ++pxIter)
+		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
 			pxIter->first = averageColor;
 		}
