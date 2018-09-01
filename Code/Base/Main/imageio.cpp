@@ -17,24 +17,27 @@ Image loadImage(const std::filesystem::path& filename)
 	int ogHeight = 0;
 	Image img;
 	unsigned char *data = stbi_load(filename.generic_string().c_str(), &ogWidth, &ogHeight, &img.comp, 3);
-	if (ogHeight % TileSize == 0 && ogWidth % TileSize == 0)
+	if (data)
 	{
-		img.width = ogWidth;
-		img.height = ogHeight;
-		img.imgData.resize(img.width * img.height);
-		img.comp = 3;
-		memcpy(img.imgData.data(), data, img.width * img.height * 3);
-	}
-	else
-	{
-		img.width = (ogWidth + TileSize - 1) & ~(TileSize - 1);
-		img.height = (ogHeight + TileSize - 1) & ~(TileSize - 1);
-		img.imgData.resize(img.width * img.height);
-		img.comp = 3;
-		int row;
-		for (row = 0; row < ogHeight; ++row)
+		if (ogHeight % TileSize == 0 && ogWidth % TileSize == 0)
 		{
-			memcpy(&img.imgData[row * img.width], &data[row * ogWidth * 3], ogWidth * 3);
+			img.width = ogWidth;
+			img.height = ogHeight;
+			img.imgData.resize(img.width * img.height);
+			img.comp = 3;
+			memcpy(img.imgData.data(), data, img.width * img.height * 3);
+		}
+		else
+		{
+			img.width = (ogWidth + TileSize - 1) & ~(TileSize - 1);
+			img.height = (ogHeight + TileSize - 1) & ~(TileSize - 1);
+			img.imgData.resize(img.width * img.height);
+			img.comp = 3;
+			int row;
+			for (row = 0; row < ogHeight; ++row)
+			{
+				memcpy(&img.imgData[row * img.width], &data[row * ogWidth * 3], ogWidth * 3);
+			}
 		}
 	}
 	stbi_image_free(data);
@@ -124,7 +127,8 @@ void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsign
 		}
 	}
 
-	snesTiles.push_back();
+	Tile& emptyTile = snesTiles.push_back();
+	memset(emptyTile.data, 0, sizeof(emptyTile.data));
 	for (auto& snesTile : snesTiles)
 	{
 		Tile srcTile = snesTile;
