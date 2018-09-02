@@ -56,7 +56,7 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 		memcpy(buf->data() + oldSize, data, size);
 	};
 
-	stbi_write_bmp_to_func(writeFunc, &buffer, img.width, img.height, img.comp, img.imgData.data());
+	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, img.comp, img.imgData.data(),0);
 
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
@@ -78,7 +78,7 @@ void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsi
 		memcpy(buf->data() + oldSize, data, size);
 	};
 
-	stbi_write_bmp_to_func(writeFunc, &buffer, width, height, 1, pltImg.img.data());
+	stbi_write_png_to_func(writeFunc, &buffer, width, height, 1, pltImg.img.data(),0);
 
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))

@@ -7,11 +7,11 @@
 
 using namespace eastl;
 
-void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutParams& out);
+void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out);
 
-void processImage(const ProcessImageParams& params, ProcessImageOutParams& out)
+void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	out.img = params.img;
+	out.processedImg = out.srcImg;
 	
 	if (params.lowBitDepthPalette)
 	{
@@ -46,7 +46,7 @@ Color calculateColorDelta(IndexedImageDataIterator begin, IndexedImageDataIterat
 	return delta;
 }
 
-void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutParams& out)
+void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out)
 {
 	// copy the src image data into an array that will let us track how it gets sorted and reordered
 	struct BucketRange
@@ -64,10 +64,10 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutPa
 	};
 
 	IndexedImageData indexedImageData;
-	indexedImageData.reserve(params.img.imgData.size());
+	indexedImageData.reserve(out.srcImg.imgData.size());
 	
 	unsigned int idx = 0;
-	for (auto px : params.img.imgData)
+	for (auto px : out.srcImg.imgData)
 	{
 		indexedImageData.push_back(make_pair(px, idx));
 		++idx;
@@ -154,7 +154,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutPa
 	}
 
 	// now that the colors have been bucketed, calculate the avg color of each bucket to determine the image's palette 
-	out.palettizedImage.img.resize(params.img.imgData.size());
+	out.palettizedImage.img.resize(out.srcImg.imgData.size());
 	out.palettizedImage.palette.clear();
 	out.palettizedImage.palette.push_back(); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
@@ -182,7 +182,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageOutPa
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
 			out.palettizedImage.img[pxIter->second] = paletteIdx;
-			out.img.imgData[pxIter->second] = averageColor;
+			out.processedImg.imgData[pxIter->second] = averageColor;
 		}
 	}
 }
