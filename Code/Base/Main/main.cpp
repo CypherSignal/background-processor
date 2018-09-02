@@ -92,38 +92,33 @@ int main(int argc, char** argv)
 	std::filesystem::path outDirPath = outDir.value();
 	std::filesystem::path inFilePath = inFile.value();
 
+	ProcessImageParams params;
+	params.lowBitDepthPalette = false;
+	params.maxColors = 256;
+	params.outDirPath = outDirPath;
 	if (std::filesystem::is_regular_file(inFilePath))
 	{
-		ProcessImageParams params;
-		params.lowBitDepthPalette = false;
-		params.maxColors = 256;
 		params.inFilePath = inFilePath;
-		params.outDirPath = outDirPath;
 		processFile(params);
 	}
 	else if (std::filesystem::is_directory(inFilePath))
 	{
-		eastl::vector<ProcessImageParams> processParams;
+		eastl::vector<ProcessImageParams> processParamsList;
 		{
-			ProcessImageParams processImageParams;
-			processImageParams.lowBitDepthPalette = false;
-			processImageParams.maxColors = 256;
-			processImageParams.outDirPath = outDirPath;
-
 			for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
 			{
 				if (is_regular_file(entry.path()))
 				{
-					processImageParams.inFilePath = entry.path();
-					processParams.push_back(processImageParams);
+					params.inFilePath = entry.path();
+					processParamsList.push_back(params);
 				}
 			}
 		}
 		eastl::vector<Concurrency::task<void>> tasks;
-		tasks.reserve(processParams.size());
-		for (auto& processParam : processParams)
+		tasks.reserve(processParamsList.size());
+		for (auto& processParams : processParamsList)
 		{
-			tasks.push_back(Concurrency::create_task([&processParam]() { processFile(processParam); }));
+			tasks.push_back(Concurrency::create_task([&processParams]() { processFile(processParams); }));
 		}
 		Concurrency::when_all(tasks.begin(), tasks.end()).wait();
 	}
@@ -132,7 +127,6 @@ int main(int argc, char** argv)
 		std::cout << "File or directory for input cli arg does not exist: " << inFilePath.c_str();
 		return 1;
 	}
-
 
 	return 0;
 }
