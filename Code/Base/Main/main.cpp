@@ -105,32 +105,27 @@ int main(int argc, char** argv)
 	}
 	else if (std::filesystem::is_directory(inFilePath))
 	{
-		for (int i = 0; i < 5; ++i)
-		{
-			ProcessImageParams processImageParams;
-			processImageParams.lowBitDepthPalette = false;
-			processImageParams.maxColors = 256;
-			processImageParams.outDirPath = outDirPath;
+		ProcessImageParams processImageParams;
+		processImageParams.lowBitDepthPalette = false;
+		processImageParams.maxColors = 256;
+		processImageParams.outDirPath = outDirPath;
 
-			eastl::vector<ProcessImageParams> processParams;
-			for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
+		eastl::vector<ProcessImageParams> processParams;
+		for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
+		{
+			if (is_regular_file(entry.path()))
 			{
-				if (is_regular_file(entry.path()))
-				{
-					processImageParams.inFilePath = entry.path();
-					processParams.push_back(processImageParams);
-				}
+				processImageParams.inFilePath = entry.path();
+				processParams.push_back(processImageParams);
 			}
-			//eastl::for_each(paths.begin(), paths.end(), [](const ProcessImageParams& params)
-			eastl::vector<Concurrency::task<void>> tasks;
-			tasks.reserve(processParams.size());
-			for (int i = 0; i < processParams.size(); ++i)
-			{
-				tasks.push_back(processFile(processParams[i]));
-				Concurrency::when_all(tasks.begin(), tasks.end()).wait();
-			}
-			Concurrency::when_all(tasks.begin(), tasks.end()).wait();
 		}
+		eastl::vector<Concurrency::task<void>> tasks;
+		tasks.reserve(processParams.size());
+		for (int i = 0; i < processParams.size(); ++i)
+		{
+			tasks.push_back(processFile(processParams[i]));
+		}
+		Concurrency::when_all(tasks.begin(), tasks.end()).wait();
 	}
 	else
 	{
