@@ -2,6 +2,8 @@
 
 #include "imageio.h"
 
+#include <concurrent_queue.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <External/stb/stb_image.h>
 
@@ -43,6 +45,68 @@ Image loadImage(const std::filesystem::path& filename)
 	return img;
 }
 
+void fileWriteQueueExec(class FileWriteQueue* queue);
+
+class FileWriteQueue
+{
+	struct WriteQueueEntry
+	{
+		void* data;
+		size_t count;
+		std::filesystem::path filePath;
+	};
+	Concurrency::concurrent_queue<WriteQueueEntry> m_writeQueue;
+	std::thread m_writeThread;
+	volatile bool m_shuttingDown;
+
+	void run()
+	{
+		do
+		{
+			WriteQueueEntry entry;
+			if (m_writeQueue.try_pop(entry))
+			{
+				FILE* out;
+				if (!fopen_s(&out, entry.filePath.generic_string().c_str(), "wb"))
+				{
+					fwrite(entry.data, 1, entry.count, out);
+					fclose(out);
+					delete entry.data;
+				}
+			}
+			Sleep(1);
+		} while (!m_shuttingDown);
+	}
+	friend void fileWriteQueueExec(class FileWriteQueue* queue);
+
+public:
+	FileWriteQueue() 
+		: m_writeQueue()
+		, m_shuttingDown(false)
+		, m_writeThread(fileWriteQueueExec, this) 
+	{}
+	~FileWriteQueue()
+	{
+		m_shuttingDown = true;
+		m_writeThread.join();
+	}
+	void enqueueWrite(void* data, size_t count, const std::filesystem::path& filePath)
+	{
+		WriteQueueEntry newEntry{ new char[count], count, filePath };
+		memcpy(newEntry.data, data, count);
+		m_writeQueue.push(newEntry);
+	}
+
+} s_fileWriteQueue;
+
+void fileWriteQueueExec(FileWriteQueue* queue) { queue->run(); }
+
+template<typename T>
+void writeToFile(T* data, size_t count, const std::filesystem::path& filePath)
+{
+	s_fileWriteQueue.enqueueWrite((void*)data, sizeof(T) * count, filePath);
+}
+
 void saveImage(const Image& img, const std::filesystem::path& file)
 {
 	eastl::vector<unsigned char> buffer;
@@ -57,12 +121,7 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 
 	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, 3, img.data.data(),0);
 
-	FILE* out;
-	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
-	{
-		fwrite(buffer.data(), sizeof(unsigned char), buffer.size(), out);
-		fclose(out);
-	}
+	writeToFile(buffer.data(), buffer.size(), file);
 }
 
 void savePalettizedImage(const PalettizedImage& img, const std::filesystem::path& file)
@@ -79,22 +138,12 @@ void savePalettizedImage(const PalettizedImage& img, const std::filesystem::path
 
 	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, 1, img.data.data(),0);
 
-	FILE* out;
-	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
-	{
-		fwrite(buffer.data(), sizeof(unsigned char), buffer.size(), out);
-		fclose(out);
-	}
+	writeToFile(buffer.data(), buffer.size(), file);
 }
 
 void saveSnesPalette(eastl::fixed_vector<unsigned short, 256, false>& palette, const std::filesystem::path& file)
 {
-	FILE* out;
-	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
-	{
-		fwrite(palette.data(), sizeof(unsigned short), palette.size(), out);
-		fclose(out);
-	}
+	writeToFile(palette.data(), palette.size(), file);
 }
 
 void saveSnesTiles(const PalettizedImage& img, const std::filesystem::path& file)
@@ -160,12 +209,7 @@ void saveSnesTiles(const PalettizedImage& img, const std::filesystem::path& file
 		}
 	}
 
-	FILE* out;
-	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
-	{
-		fwrite(snesTiles.data(), sizeof(Tile), snesTiles.size(), out);
-		fclose(out);
-	}
+	writeToFile(snesTiles.data(), snesTiles.size(), file);
 }
 
 void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesystem::path& file)
@@ -183,10 +227,5 @@ void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesys
 		}
 	}
 
-	FILE* out;
-	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
-	{
-		fwrite(snesTilemap.data(), sizeof(unsigned short), snesTilemap.size(), out);
-		fclose(out);
-	}
+	writeToFile(snesTilemap.data(), snesTilemap.size(), file);
 }
