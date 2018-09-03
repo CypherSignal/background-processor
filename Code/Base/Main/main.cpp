@@ -102,22 +102,15 @@ int main(int argc, char** argv)
 	}
 	else if (std::filesystem::is_directory(inFilePath))
 	{
-		eastl::vector<ProcessImageParams> processParamsList;
-		{
-			for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
-			{
-				if (is_regular_file(entry.path()))
-				{
-					params.inFilePath = entry.path();
-					processParamsList.push_back(params);
-				}
-			}
-		}
 		eastl::vector<Concurrency::task<void>> tasks;
-		tasks.reserve(processParamsList.size());
-		for (auto& processParams : processParamsList)
+		for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
 		{
-			tasks.push_back(Concurrency::create_task([&processParams]() { processFile(processParams); }));
+			if (is_regular_file(entry.path()))
+			{
+				params.inFilePath = entry.path();
+				// value-copy of params is intentional; a copy of the params is made and the task executes on that
+				tasks.push_back(Concurrency::create_task([params]() { processFile(params); }));
+			}
 		}
 		Concurrency::when_all(tasks.begin(), tasks.end()).wait();
 	}
