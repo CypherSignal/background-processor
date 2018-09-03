@@ -45,66 +45,22 @@ Image loadImage(const std::filesystem::path& filename)
 	return img;
 }
 
-void fileWriteQueueExec(class FileWriteQueue* queue);
-
-class FileWriteQueue
-{
-	struct WriteQueueEntry
-	{
-		void* data;
-		size_t count;
-		std::filesystem::path filePath;
-	};
-	Concurrency::concurrent_queue<WriteQueueEntry> m_writeQueue;
-	std::thread m_writeThread;
-	volatile bool m_shuttingDown;
-
-	void run()
-	{
-		do
-		{
-			WriteQueueEntry entry;
-			if (m_writeQueue.try_pop(entry))
-			{
-				FILE* out;
-				if (!fopen_s(&out, entry.filePath.generic_string().c_str(), "wb"))
-				{
-					fwrite(entry.data, 1, entry.count, out);
-					fclose(out);
-					delete entry.data;
-				}
-			}
-			Sleep(1);
-		} while (!m_shuttingDown);
-	}
-	friend void fileWriteQueueExec(class FileWriteQueue* queue);
-
-public:
-	FileWriteQueue() 
-		: m_writeQueue()
-		, m_shuttingDown(false)
-		, m_writeThread(fileWriteQueueExec, this) 
-	{}
-	~FileWriteQueue()
-	{
-		m_shuttingDown = true;
-		m_writeThread.join();
-	}
-	void enqueueWrite(void* data, size_t count, const std::filesystem::path& filePath)
-	{
-		WriteQueueEntry newEntry{ new char[count], count, filePath };
-		memcpy(newEntry.data, data, count);
-		m_writeQueue.push(newEntry);
-	}
-
-} s_fileWriteQueue;
-
-void fileWriteQueueExec(FileWriteQueue* queue) { queue->run(); }
-
 template<typename T>
 void writeToFile(T* data, size_t count, const std::filesystem::path& filePath)
 {
-	s_fileWriteQueue.enqueueWrite((void*)data, sizeof(T) * count, filePath);
+	size_t bufferSize = sizeof(T) * count;
+	void* buffer = new char[bufferSize];
+	memcpy(buffer, data, bufferSize);
+	Concurrency::create_task([buffer, bufferSize, filePath]()
+	{
+		FILE* out;
+		if (!fopen_s(&out, filePath.generic_string().c_str(), "wb"))
+		{
+			fwrite(buffer, 1, bufferSize, out);
+			fclose(out);
+			delete buffer;
+		}
+	});
 }
 
 void saveImage(const Image& img, const std::filesystem::path& file)
