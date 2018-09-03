@@ -87,22 +87,12 @@ void savePalettizedImage(const PalettizedImage& img, const std::filesystem::path
 	}
 }
 
-void saveSnesPalette(eastl::fixed_vector<Color, 256, false>& palette, const std::filesystem::path& file)
+void saveSnesPalette(eastl::fixed_vector<unsigned short, 256, false>& palette, const std::filesystem::path& file)
 {
-	eastl::fixed_vector<unsigned short, 256, false> snesPlt(palette.size());
-
-	auto snesPltIter = snesPlt.begin();
-	for (auto srcPltIter : palette)
-	{
-		unsigned short snesColor = ((srcPltIter.b & 0xf8) << 7) | ((srcPltIter.g & 0xf8) << 2) | ((srcPltIter.r & 0xf8) >> 3);
-		(*snesPltIter) = snesColor;
-		++snesPltIter;
-	}
-	
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
 	{
-		fwrite(snesPlt.data(), sizeof(unsigned short), snesPlt.size(), out);
+		fwrite(palette.data(), sizeof(unsigned short), palette.size(), out);
 		fclose(out);
 	}
 }

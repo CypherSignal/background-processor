@@ -18,7 +18,7 @@ struct Image
 
 struct PalettizedImage
 {
-	eastl::fixed_vector<Color, 256, false> palette;
+	eastl::fixed_vector<unsigned short, 256, false> palette;
 	eastl::vector<unsigned char> data;
 	int width, height;
 };

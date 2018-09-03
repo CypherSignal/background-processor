@@ -21,7 +21,12 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 
 	for (; newImgIter != newImgEnd; ++newImgIter, ++palImgIter)
 	{
-		(*newImgIter) = palettizedImg.palette[(*palImgIter)];
+		unsigned short snesCol = palettizedImg.palette[(*palImgIter)];
+		Color col;
+		col.r = (snesCol & 0x001f) << 3;
+		col.g = (snesCol & 0x03e0) >> 2;
+		col.b = (snesCol & 0x7c00) >> 7;
+		(*newImgIter) = col;
 	}
 	return newImg;
 }
@@ -173,7 +178,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	out.palettizedImg.height = out.srcImg.height;
 	out.palettizedImg.data.resize(out.srcImg.data.size());
 	out.palettizedImg.palette.clear();
-	out.palettizedImg.palette.push_back(); // add 0 because that's a translucent pixel that should not be used
+	out.palettizedImg.palette.push_back(0); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
 	{
 		// calculate the average in the provided bucket, and update all values to that one
@@ -188,14 +193,14 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 			accumulatedB += pxIter->first.b;
 		}
 
-		Color averageColor;
 		size_t bucketSize = bucket.end - bucket.begin;
-		averageColor.r = unsigned char(accumulatedR / bucketSize) & 0xf8; // mask to 0xf8 to match snes limitations
-		averageColor.g = unsigned char(accumulatedG / bucketSize) & 0xf8;
-		averageColor.b = unsigned char(accumulatedB / bucketSize) & 0xf8;
-
+		
+		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
+		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
+		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
+		unsigned short snesColor = snesB | snesG | snesR;
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(averageColor);
+		out.palettizedImg.palette.push_back(snesColor);
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
 			out.palettizedImg.data[pxIter->second] = paletteIdx;

@@ -35,9 +35,7 @@ Image applyNtscFilter(const PalettizedImage& palettizedImg)
 		
 		for (; palImgIter != palImgEnd; ++palImgIter, ++snesImgIter)
 		{
-			Color actualColor = palettizedImg.palette[(*palImgIter)];
-			unsigned short snesPx = ((actualColor.r & 0xf8) >> 3) | ((actualColor.g & 0xf8) << 2) | ((actualColor.b & 0xf8) << 7);
-			(*snesImgIter) = snesPx;
+			(*snesImgIter) = palettizedImg.palette[(*palImgIter)];
 		}
 	}
 
