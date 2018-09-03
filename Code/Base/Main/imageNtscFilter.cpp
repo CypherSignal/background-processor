@@ -12,9 +12,21 @@ struct SnesNtscObject
 	SnesNtscObject()
 	{
 		m_ntscConfig = new snes_ntsc_t;
-		snes_ntsc_setup_t setup = snes_ntsc_svideo;
-		snes_ntsc_init(m_ntscConfig, &setup);
+		
+		m_configTask = Concurrency::create_task([ntscConfig = this->m_ntscConfig]()
+		{
+			snes_ntsc_setup_t setup = snes_ntsc_svideo;
+			snes_ntsc_init(ntscConfig, &setup);
+		});
 	}
+
+	snes_ntsc_t const* getNtscConfig()
+	{
+		m_configTask.wait();
+		return m_ntscConfig;
+	}
+private:
+	Concurrency::task<void> m_configTask;
 	snes_ntsc_t* m_ntscConfig;
 };
 
@@ -43,7 +55,7 @@ Image applyNtscFilter(const PalettizedImage& palettizedImg)
 	eastl::vector<char> filteredData;
 	unsigned int outImgWidth = SNES_NTSC_OUT_WIDTH(width);
 	filteredData.resize(outImgWidth * height * 2 * 4); // times 2 because it's doubling height; times 4 because output is 4Bpp
-	snes_ntsc_blit(s_snesNtscObj.m_ntscConfig, snesImgData.data(), width, 0, width, height, filteredData.data(), outImgWidth * 4);
+	snes_ntsc_blit(s_snesNtscObj.getNtscConfig(), snesImgData.data(), width, 0, width, height, filteredData.data(), outImgWidth * 4);
 
 	// scale up data and prepare it for usage as an image
 	Image outImg;
