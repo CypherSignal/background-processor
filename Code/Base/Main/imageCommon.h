@@ -12,12 +12,13 @@ struct Color
 
 struct Image
 {
-	int width, height, comp;
-	eastl::vector<Color> imgData;
+	eastl::vector<Color> data;
+	int width, height;
 };
 
 struct PalettizedImage
 {
 	eastl::fixed_vector<Color, 256, false> palette;
-	eastl::vector<unsigned char> img;
+	eastl::vector<unsigned char> data;
+	int width, height;
 };

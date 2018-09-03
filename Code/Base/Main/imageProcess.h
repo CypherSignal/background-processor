@@ -21,9 +21,9 @@ struct ProcessImageParams
 struct ProcessImageStorage
 {
 	Image srcImg;
-	Image processedImg;
-	PalettizedImage palettizedImage;
+	PalettizedImage palettizedImg;
 	// TODO: hdma data, tilemap data...
 };
 
+Image getDepalettizedImage(const PalettizedImage& palettizedImg);
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out);

@@ -15,28 +15,27 @@ Image loadImage(const std::filesystem::path& filename)
 	const int TileSize = 8;
 	int ogWidth = 0;
 	int ogHeight = 0;
+	int ogComp = 0;;
 	Image img;
-	unsigned char *data = stbi_load(filename.generic_string().c_str(), &ogWidth, &ogHeight, &img.comp, 3);
+	unsigned char *data = stbi_load(filename.generic_string().c_str(), &ogWidth, &ogHeight, &ogComp, 3);
 	if (data)
 	{
 		if (ogHeight % TileSize == 0 && ogWidth % TileSize == 0)
 		{
 			img.width = ogWidth;
 			img.height = ogHeight;
-			img.imgData.resize(img.width * img.height);
-			img.comp = 3;
-			memcpy(img.imgData.data(), data, img.width * img.height * 3);
+			img.data.resize(img.width * img.height);
+			memcpy(img.data.data(), data, img.width * img.height * 3);
 		}
 		else
 		{
 			img.width = (ogWidth + TileSize - 1) & ~(TileSize - 1);
 			img.height = (ogHeight + TileSize - 1) & ~(TileSize - 1);
-			img.imgData.resize(img.width * img.height);
-			img.comp = 3;
+			img.data.resize(img.width * img.height);
 			int row;
 			for (row = 0; row < ogHeight; ++row)
 			{
-				memcpy(&img.imgData[row * img.width], &data[row * ogWidth * 3], ogWidth * 3);
+				memcpy(&img.data[row * img.width], &data[row * ogWidth * 3], ogWidth * 3);
 			}
 		}
 	}
@@ -47,7 +46,7 @@ Image loadImage(const std::filesystem::path& filename)
 void saveImage(const Image& img, const std::filesystem::path& file)
 {
 	eastl::vector<unsigned char> buffer;
-	buffer.reserve(img.imgData.size() * 4);
+	buffer.reserve(img.data.size() * 4);
 
 	auto writeFunc = [](void* context, void* data, int size) {
 		auto buf = static_cast<eastl::vector<unsigned char>*>(context);
@@ -56,7 +55,7 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 		memcpy(buf->data() + oldSize, data, size);
 	};
 
-	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, img.comp, img.imgData.data(),0);
+	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, 3, img.data.data(),0);
 
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
@@ -66,10 +65,10 @@ void saveImage(const Image& img, const std::filesystem::path& file)
 	}
 }
 
-void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsigned int height, const std::filesystem::path& file)
+void savePalettizedImage(const PalettizedImage& img, const std::filesystem::path& file)
 {
 	eastl::vector<unsigned char> buffer;
-	buffer.reserve(pltImg.img.size() * 2);
+	buffer.reserve(img.data.size() * 2);
 
 	auto writeFunc = [](void* context, void* data, int size) {
 		auto buf = static_cast<eastl::vector<unsigned char>*>(context);
@@ -78,7 +77,7 @@ void savePalettizedImage(const PalettizedImage& pltImg, unsigned int width, unsi
 		memcpy(buf->data() + oldSize, data, size);
 	};
 
-	stbi_write_png_to_func(writeFunc, &buffer, width, height, 1, pltImg.img.data(),0);
+	stbi_write_png_to_func(writeFunc, &buffer, img.width, img.height, 1, img.data.data(),0);
 
 	FILE* out;
 	if (!fopen_s(&out, file.generic_string().c_str(), "wb"))
@@ -108,14 +107,17 @@ void saveSnesPalette(eastl::fixed_vector<Color, 256, false>& palette, const std:
 	}
 }
 
-void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsigned int height, const std::filesystem::path& file)
+void saveSnesTiles(const PalettizedImage& img, const std::filesystem::path& file)
 {
 	struct Tile
 	{
 		unsigned char data[64];
 	};
 	const unsigned int MaxTiles = (256 / 8) * (224 / 8) + 1; // +1 to have an empty black tile
-	eastl::fixed_vector<Tile, MaxTiles, false> snesTiles; // 897 
+	eastl::fixed_vector<Tile, MaxTiles, false> snesTiles;
+	
+	unsigned int width = img.width;
+	unsigned int height = img.height;
 	snesTiles.resize(((width + 7) / 8) * ((height + 7) / 8));
 
 	// transform the chars in img to an 8x8 tile, then resort the data as a bitplane
@@ -123,7 +125,7 @@ void saveSnesTiles(eastl::vector<unsigned char>& img, unsigned int width, unsign
 	{
 		for (unsigned int j = 0; j < width; ++j)
 		{
-			snesTiles[(i / 8) * (width / 8) + j / 8].data[(i % 8) * 8 + j % 8] = img[i * width + j];
+			snesTiles[(i / 8) * (width / 8) + j / 8].data[(i % 8) * 8 + j % 8] = img.data[i * width + j];
 		}
 	}
 

@@ -20,55 +20,54 @@ struct SnesNtscObject
 
 static SnesNtscObject s_snesNtscObj;
 
-Image applyNtscFilter(const Image& img)
+Image applyNtscFilter(const PalettizedImage& palettizedImg)
 {
 	// prep the data for input into the ntsc filter
 	eastl::vector<unsigned short> snesImgData;
-	snesImgData.resize(img.imgData.size());
+	snesImgData.resize(palettizedImg.data.size());
+	unsigned int width = palettizedImg.width;
+	unsigned int height = palettizedImg.height;
 
 	{
-		auto srcImgIter = img.imgData.begin();
-		auto srcImgIterEnd = img.imgData.end();
+		auto palImgIter = palettizedImg.data.begin();
+		auto palImgEnd = palettizedImg.data.end();
 		auto snesImgIter = snesImgData.begin();
 		
-		while (srcImgIter != srcImgIterEnd)
+		for (; palImgIter != palImgEnd; ++palImgIter, ++snesImgIter)
 		{
-			unsigned short snesPx = ((srcImgIter->r & 0xf8) >> 3) | ((srcImgIter->g & 0xf8) << 2) | ((srcImgIter->b & 0xf8) << 7);
+			Color actualColor = palettizedImg.palette[(*palImgIter)];
+			unsigned short snesPx = ((actualColor.r & 0xf8) >> 3) | ((actualColor.g & 0xf8) << 2) | ((actualColor.b & 0xf8) << 7);
 			(*snesImgIter) = snesPx;
-
-			srcImgIter++;
-			snesImgIter++;
 		}
 	}
 
 	// run the filter
 	eastl::vector<char> filteredData;
-	int outImgWidth = SNES_NTSC_OUT_WIDTH(img.width);
-	filteredData.resize(outImgWidth * img.height * 2 * 4); // times 2 because it's doubling height; times 4 because output is 4Bpp
-	snes_ntsc_blit(s_snesNtscObj.m_ntscConfig, snesImgData.data(), img.width, 0, img.width, img.height, filteredData.data(), outImgWidth * 4);
+	unsigned int outImgWidth = SNES_NTSC_OUT_WIDTH(width);
+	filteredData.resize(outImgWidth * height * 2 * 4); // times 2 because it's doubling height; times 4 because output is 4Bpp
+	snes_ntsc_blit(s_snesNtscObj.m_ntscConfig, snesImgData.data(), width, 0, width, height, filteredData.data(), outImgWidth * 4);
 
 	// scale up data and prepare it for usage as an image
 	Image outImg;
-	outImg.comp = img.comp;
 	outImg.width = outImgWidth;
-	outImg.height = img.height * 2;
-	outImg.imgData.resize(outImgWidth * outImg.height * 2);
+	outImg.height = height * 2;
+	outImg.data.resize(outImgWidth * outImg.height * 2);
 	{
-		for (int row = 0; row < img.height; ++row)
+		for (unsigned int row = 0; row < height; ++row)
 		{
-			for (int col = 0; col < outImgWidth; ++col)
+			for (unsigned int col = 0; col < outImgWidth; ++col)
 			{
-				int outImgIdx = row * outImgWidth * 2 + col;
-				int filteredImgIdx = (row * outImgWidth + col) * 4;
+				unsigned int outImgIdx = row * outImgWidth * 2 + col;
+				unsigned int filteredImgIdx = (row * outImgWidth + col) * 4;
 
-				outImg.imgData[outImgIdx].b = filteredData[filteredImgIdx + 0];
-				outImg.imgData[outImgIdx].g = filteredData[filteredImgIdx + 1];
-				outImg.imgData[outImgIdx].r = filteredData[filteredImgIdx + 2];
+				outImg.data[outImgIdx].b = filteredData[filteredImgIdx + 0];
+				outImg.data[outImgIdx].g = filteredData[filteredImgIdx + 1];
+				outImg.data[outImgIdx].r = filteredData[filteredImgIdx + 2];
 
 				outImgIdx += outImgWidth;
-				outImg.imgData[outImgIdx].b = filteredData[filteredImgIdx + 0];
-				outImg.imgData[outImgIdx].g = filteredData[filteredImgIdx + 1];
-				outImg.imgData[outImgIdx].r = filteredData[filteredImgIdx + 2];
+				outImg.data[outImgIdx].b = filteredData[filteredImgIdx + 0];
+				outImg.data[outImgIdx].g = filteredData[filteredImgIdx + 1];
+				outImg.data[outImgIdx].r = filteredData[filteredImgIdx + 2];
 			}
 		}
 	}

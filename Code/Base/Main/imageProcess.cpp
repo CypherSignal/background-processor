@@ -9,10 +9,25 @@ using namespace eastl;
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out);
 
+Image getDepalettizedImage(const PalettizedImage& palettizedImg)
+{
+	Image newImg;
+	newImg.width = palettizedImg.width;
+	newImg.height = palettizedImg.height;
+	newImg.data.resize(newImg.width * newImg.height);
+	auto newImgIter = newImg.data.begin();
+	auto newImgEnd = newImg.data.end();
+	auto palImgIter = palettizedImg.data.begin();
+
+	for (; newImgIter != newImgEnd; ++newImgIter, ++palImgIter)
+	{
+		(*newImgIter) = palettizedImg.palette[(*palImgIter)];
+	}
+	return newImg;
+}
+
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	out.processedImg = out.srcImg;
-	
 	if (params.lowBitDepthPalette)
 	{
 		// todo
@@ -64,10 +79,10 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	};
 
 	IndexedImageData indexedImageData;
-	indexedImageData.reserve(out.srcImg.imgData.size());
+	indexedImageData.reserve(out.srcImg.data.size());
 	
 	unsigned int idx = 0;
-	for (auto px : out.srcImg.imgData)
+	for (auto px : out.srcImg.data)
 	{
 		indexedImageData.push_back(make_pair(px, idx));
 		++idx;
@@ -154,9 +169,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	}
 
 	// now that the colors have been bucketed, calculate the avg color of each bucket to determine the image's palette 
-	out.palettizedImage.img.resize(out.srcImg.imgData.size());
-	out.palettizedImage.palette.clear();
-	out.palettizedImage.palette.push_back(); // add 0 because that's a translucent pixel that should not be used
+	out.palettizedImg.width = out.srcImg.width;
+	out.palettizedImg.height = out.srcImg.height;
+	out.palettizedImg.data.resize(out.srcImg.data.size());
+	out.palettizedImg.palette.clear();
+	out.palettizedImg.palette.push_back(); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
 	{
 		// calculate the average in the provided bucket, and update all values to that one
@@ -177,12 +194,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		averageColor.g = unsigned char(accumulatedG / bucketSize) & 0xf8;
 		averageColor.b = unsigned char(accumulatedB / bucketSize) & 0xf8;
 
-		auto paletteIdx = (unsigned char)(out.palettizedImage.palette.size());
-		out.palettizedImage.palette.push_back(averageColor);
+		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
+		out.palettizedImg.palette.push_back(averageColor);
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
-			out.palettizedImage.img[pxIter->second] = paletteIdx;
-			out.processedImg.imgData[pxIter->second] = averageColor;
+			out.palettizedImg.data[pxIter->second] = paletteIdx;
 		}
 	}
 }

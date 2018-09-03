@@ -2,5 +2,5 @@
 
 #include "imageCommon.h"
 
-Image applyNtscFilter(const Image& img);
+Image applyNtscFilter(const PalettizedImage& palettizedImg);
 

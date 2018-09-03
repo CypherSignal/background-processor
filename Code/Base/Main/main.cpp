@@ -14,7 +14,7 @@ void processFile(const ProcessImageParams &params)
 	storage.srcImg = loadImage(params.inFilePath);
 
 	// if the file wasn't an image, skip out
-	if (storage.srcImg.imgData.size() == 0)
+	if (storage.srcImg.data.size() == 0)
 		return;
 
 	// if the image was too big on either dimension, skip out
@@ -28,43 +28,42 @@ void processFile(const ProcessImageParams &params)
 		Concurrency::create_task([&params, &storage]
 		{
 			std::filesystem::path outPngPath = params.outDirPath / params.inFilePath.stem().concat(".png");
-			saveImage(storage.processedImg, outPngPath);
+			saveImage(getDepalettizedImage(storage.palettizedImg), outPngPath);
 		}),
 
 		// write out ntsc-processed png
 		Concurrency::create_task([&params, &storage]
 		{
-			Image ntscFilteredImg = applyNtscFilter(storage.processedImg);
 			std::filesystem::path outFilteredPngPath = params.outDirPath / params.inFilePath.stem().concat("-filtered.png");
-			saveImage(ntscFilteredImg, outFilteredPngPath);
+			saveImage(applyNtscFilter(storage.palettizedImg), outFilteredPngPath);
 		}),
 
 		// write out palette information
 		Concurrency::create_task([&params, &storage]
 		{
 			std::filesystem::path outPltImgPath = params.outDirPath / params.inFilePath.stem().concat("-pltidx.png");
-			savePalettizedImage(storage.palettizedImage, storage.processedImg.width, storage.processedImg.height, outPltImgPath);
+			savePalettizedImage(storage.palettizedImg, outPltImgPath);
 		}),
 
 		// write out palette data
 		Concurrency::create_task([&params, &storage]
 		{
 			std::filesystem::path outSnesPltImgPath = params.outDirPath / params.inFilePath.stem().concat(".clr");
-			saveSnesPalette(storage.palettizedImage.palette, outSnesPltImgPath);
+			saveSnesPalette(storage.palettizedImg.palette, outSnesPltImgPath);
 		}),
 
 		// write out tile data
 		Concurrency::create_task([&params, &storage]
 		{
 			std::filesystem::path outSnesTileImgPath = params.outDirPath / params.inFilePath.stem().concat(".pic");
-			saveSnesTiles(storage.palettizedImage.img, storage.processedImg.width, storage.processedImg.height, outSnesTileImgPath);
+			saveSnesTiles(storage.palettizedImg, outSnesTileImgPath);
 		}),
 
 		// write out tilemap data
 		Concurrency::create_task([&params, &storage]
 		{
 			std::filesystem::path outSnesMapImgPath = params.outDirPath / params.inFilePath.stem().concat(".map");
-			saveSnesTilemap(storage.processedImg.width, storage.processedImg.height, outSnesMapImgPath);
+			saveSnesTilemap(storage.palettizedImg.width, storage.palettizedImg.height, outSnesMapImgPath);
 		})
 	};
 	Concurrency::when_all(tasks.begin(), tasks.end()).wait();
