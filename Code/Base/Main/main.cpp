@@ -23,50 +23,49 @@ void processFile(const ProcessImageParams &params)
 
 	processImage(params, storage);
 		
-	eastl::vector<Concurrency::task<void>> tasks{
+	Concurrency::parallel_invoke(
 		// write out raw as png
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outPngPath = params.outDirPath / params.inFilePath.stem().concat(".png");
 			saveImage(getDepalettizedImage(storage.palettizedImg), outPngPath);
-		}),
+		},
 
 		// write out ntsc-processed png
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outFilteredPngPath = params.outDirPath / params.inFilePath.stem().concat("-filtered.png");
 			saveImage(applyNtscFilter(storage.palettizedImg), outFilteredPngPath);
-		}),
+		},
 
 		// write out palette information
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outPltImgPath = params.outDirPath / params.inFilePath.stem().concat("-pltidx.png");
 			savePalettizedImage(storage.palettizedImg, outPltImgPath);
-		}),
+		},
 
 		// write out palette data
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outSnesPltImgPath = params.outDirPath / params.inFilePath.stem().concat(".clr");
 			saveSnesPalette(storage.palettizedImg.palette, outSnesPltImgPath);
-		}),
+		},
 
 		// write out tile data
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outSnesTileImgPath = params.outDirPath / params.inFilePath.stem().concat(".pic");
 			saveSnesTiles(storage.palettizedImg, outSnesTileImgPath);
-		}),
+		},
 
 		// write out tilemap data
-		Concurrency::create_task([&params, &storage]
+		[&params, &storage]
 		{
 			std::filesystem::path outSnesMapImgPath = params.outDirPath / params.inFilePath.stem().concat(".map");
 			saveSnesTilemap(storage.palettizedImg.width, storage.palettizedImg.height, outSnesMapImgPath);
-		})
-	};
-	Concurrency::when_all(tasks.begin(), tasks.end()).wait();
+		}
+	);
 }
 
 int main(int argc, char** argv)
@@ -102,17 +101,17 @@ int main(int argc, char** argv)
 	}
 	else if (std::filesystem::is_directory(inFilePath))
 	{
-		eastl::vector<Concurrency::task<void>> tasks;
+		Concurrency::task_group tasks;
 		for (const auto& entry : std::filesystem::directory_iterator(inFilePath))
 		{
 			if (is_regular_file(entry.path()))
 			{
 				params.inFilePath = entry.path();
 				// value-copy of params is intentional; a copy of the params is made and the task executes on that
-				tasks.push_back(Concurrency::create_task([params]() { processFile(params); }));
+				tasks.run([params]{ processFile(params); });
 			}
 		}
-		Concurrency::when_all(tasks.begin(), tasks.end()).wait();
+		tasks.wait();
 	}
 	else
 	{

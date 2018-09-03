@@ -13,7 +13,7 @@ struct SnesNtscObject
 	{
 		m_ntscConfig = new snes_ntsc_t;
 		
-		m_configTask = Concurrency::create_task([ntscConfig = this->m_ntscConfig]()
+		m_configTask.run([ntscConfig = this->m_ntscConfig]()
 		{
 			snes_ntsc_setup_t setup = snes_ntsc_svideo;
 			snes_ntsc_init(ntscConfig, &setup);
@@ -26,7 +26,7 @@ struct SnesNtscObject
 		return m_ntscConfig;
 	}
 private:
-	Concurrency::task<void> m_configTask;
+	Concurrency::task_group m_configTask;
 	snes_ntsc_t* m_ntscConfig;
 };
 
