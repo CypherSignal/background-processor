@@ -64,6 +64,13 @@ void processFile(const ProcessImageParams &params)
 		{
 			std::filesystem::path outSnesMapImgPath = params.outDirPath / params.inFilePath.stem().concat(".map");
 			saveSnesTilemap(storage.palettizedImg.width, storage.palettizedImg.height, outSnesMapImgPath);
+		},
+
+		// write out hdma table
+		[&params, &storage]
+		{
+			std::filesystem::path outSnesHmdaImgPath = params.outDirPath / params.inFilePath.stem().concat(".hdma");
+			saveSnesHdmaTable(outSnesHmdaImgPath);
 		}
 	);
 }

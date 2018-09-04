@@ -183,3 +183,28 @@ void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesys
 
 	writeToFile(snesTilemap.data(), snesTilemap.size(), file);
 }
+
+void saveSnesHdmaTable(const std::filesystem::path &file)
+{
+	struct HdmaRow
+	{
+		unsigned char repeatLineCounter;
+		const unsigned char dummy = 0; // dummy byte that should be 0 - not used by hdma because it's delivered alongside cgramAddr
+		unsigned char cgramAddr;
+		unsigned char cgramData[2];
+	};
+
+	eastl::fixed_vector<HdmaRow, 224, false> hdmaTable(224);
+	
+	unsigned char i = 0;
+	for (auto& hdmaRow : hdmaTable)
+	{
+		hdmaRow.repeatLineCounter = 0x01;
+		hdmaRow.cgramAddr = i;
+		hdmaRow.cgramData[0] = 0;
+		hdmaRow.cgramData[0] = i;
+		++i;
+	}
+
+	writeToFile(hdmaTable.data(), hdmaTable.size(), file);
+}
