@@ -13,12 +13,23 @@ struct Color
 struct Image
 {
 	eastl::vector<Color> data;
-	int width, height;
+	unsigned int width, height;
+};
+
+struct HdmaRow
+{
+	unsigned char lineCounter; // should never be > 0x7f - "repeat" functionality in export doesn't exist (yet?).
+	const unsigned char dummy = 0; // dummy byte that should be 0 - not used by hdma because it's delivered alongside cgramAddr
+	unsigned char cgramAddr;
+	unsigned char cgramData[2];
 };
 
 struct PalettizedImage
 {
-	eastl::fixed_vector<unsigned short, 256, false> palette;
+	typedef eastl::fixed_vector<unsigned short, 256, false> PaletteTable;
+	typedef eastl::fixed_vector<HdmaRow, 224, false> HdmaTable;
+	PaletteTable palette;
+	HdmaTable hdmaTable;
 	eastl::vector<unsigned char> data;
-	int width, height;
+	unsigned int width, height;
 };

@@ -43,13 +43,20 @@ Image loadImage(const std::filesystem::path& filename)
 	return img;
 }
 
+
 template<typename T>
 void writeToFile(T* data, size_t count, const std::filesystem::path& filePath)
 {
+	static struct WriteFileTaskCollection
+	{
+		concurrency::task_group tasks;
+		~WriteFileTaskCollection() { tasks.wait(); }
+	} queuedTasks;
+
 	size_t bufferSize = sizeof(T) * count;
 	void* buffer = new char[bufferSize];
 	memcpy(buffer, data, bufferSize);
-	Concurrency::create_task([buffer, bufferSize, filePath]()
+	queuedTasks.tasks.run([buffer, bufferSize, filePath]()
 	{
 		FILE* out;
 		if (!fopen_s(&out, filePath.generic_string().c_str(), "wb"))
@@ -95,7 +102,7 @@ void savePalettizedImage(const PalettizedImage& img, const std::filesystem::path
 	writeToFile(buffer.data(), buffer.size(), file);
 }
 
-void saveSnesPalette(eastl::fixed_vector<unsigned short, 256, false>& palette, const std::filesystem::path& file)
+void saveSnesPalette(const PalettizedImage::PaletteTable& palette, const std::filesystem::path& file)
 {
 	writeToFile(palette.data(), palette.size(), file);
 }
@@ -184,27 +191,7 @@ void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesys
 	writeToFile(snesTilemap.data(), snesTilemap.size(), file);
 }
 
-void saveSnesHdmaTable(const std::filesystem::path &file)
+void saveSnesHdmaTable(const PalettizedImage::HdmaTable& hdmaTable, const std::filesystem::path &file)
 {
-	struct HdmaRow
-	{
-		unsigned char repeatLineCounter;
-		const unsigned char dummy = 0; // dummy byte that should be 0 - not used by hdma because it's delivered alongside cgramAddr
-		unsigned char cgramAddr;
-		unsigned char cgramData[2];
-	};
-
-	eastl::fixed_vector<HdmaRow, 224, false> hdmaTable(224);
-	
-	unsigned char i = 0;
-	for (auto& hdmaRow : hdmaTable)
-	{
-		hdmaRow.repeatLineCounter = 0x01;
-		hdmaRow.cgramAddr = i;
-		hdmaRow.cgramData[0] = 0;
-		hdmaRow.cgramData[0] = i;
-		++i;
-	}
-
 	writeToFile(hdmaTable.data(), hdmaTable.size(), file);
 }

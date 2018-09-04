@@ -70,7 +70,7 @@ void processFile(const ProcessImageParams &params)
 		[&params, &storage]
 		{
 			std::filesystem::path outSnesHmdaImgPath = params.outDirPath / params.inFilePath.stem().concat(".hdma");
-			saveSnesHdmaTable(outSnesHmdaImgPath);
+			saveSnesHdmaTable(storage.palettizedImg.hdmaTable,outSnesHmdaImgPath);
 		}
 	);
 }
@@ -99,6 +99,7 @@ int main(int argc, char** argv)
 
 	ProcessImageParams params;
 	params.lowBitDepthPalette = false;
+	params.generateHdmaData = false;
 	params.maxColors = 256;
 	params.outDirPath = outDirPath;
 	if (std::filesystem::is_regular_file(inFilePath))

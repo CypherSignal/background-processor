@@ -9,6 +9,23 @@ using namespace eastl;
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out);
 
+void updateHdmaAndPalette(const PalettizedImage::HdmaTable &hdmaTable, PalettizedImage::PaletteTable &activePalette, unsigned char &hdmaLineCounter, unsigned int &hdmaRowIdx)
+{
+	if (!hdmaLineCounter && hdmaRowIdx < hdmaTable.size())
+	{
+		const HdmaRow& activeHdmaRow = hdmaTable[hdmaRowIdx];
+		hdmaLineCounter = activeHdmaRow.lineCounter;
+		activePalette[activeHdmaRow.cgramAddr] = ((unsigned short)activeHdmaRow.cgramData[1] << 8 | activeHdmaRow.cgramData[0]);
+
+		// terminate the hdma updates if fetched linecounter was 0
+		if (hdmaLineCounter)
+			++hdmaRowIdx;
+		else
+			hdmaRowIdx = (unsigned int)hdmaTable.size();
+	}
+	--hdmaLineCounter;
+}
+
 Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 {
 	Image newImg;
@@ -19,15 +36,26 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 	auto newImgEnd = newImg.data.end();
 	auto palImgIter = palettizedImg.data.begin();
 
-	for (; newImgIter != newImgEnd; ++newImgIter, ++palImgIter)
+	unsigned int hdmaRowIdx = 0;
+	unsigned char hdmaLineCounter = 0;
+	const PalettizedImage::HdmaTable& hdmaTable = palettizedImg.hdmaTable;
+	PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
+
+	for (unsigned int i = 0; i < newImg.height; ++i)
 	{
-		unsigned short snesCol = palettizedImg.palette[(*palImgIter)];
-		Color col;
-		col.r = (snesCol & 0x001f) << 3;
-		col.g = (snesCol & 0x03e0) >> 2;
-		col.b = (snesCol & 0x7c00) >> 7;
-		(*newImgIter) = col;
+		updateHdmaAndPalette(hdmaTable, localPalette, hdmaLineCounter, hdmaRowIdx);
+
+		for (unsigned int j = 0; j < newImg.width; ++j, ++newImgIter, ++palImgIter)
+		{
+			unsigned short snesCol = localPalette[(*palImgIter)];
+			Color col;
+			col.r = (snesCol & 0x001f) << 3;
+			col.g = (snesCol & 0x03e0) >> 2;
+			col.b = (snesCol & 0x7c00) >> 7;
+			(*newImgIter) = col;
+		}
 	}
+
 	return newImg;
 }
 
@@ -40,6 +68,20 @@ void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 	else
 	{
 		quantizeToSinglePalette(params, out);
+
+		if (params.generateHdmaData)
+		{
+			out.palettizedImg.hdmaTable.resize(224);
+			unsigned char i = 0;
+			for (auto& hdmaRow : out.palettizedImg.hdmaTable)
+			{
+				hdmaRow.lineCounter = 0x01;
+				hdmaRow.cgramAddr = i;
+				hdmaRow.cgramData[1] = 0;
+				hdmaRow.cgramData[0] = i;
+				++i;
+			}
+		}
 	}
 }
 

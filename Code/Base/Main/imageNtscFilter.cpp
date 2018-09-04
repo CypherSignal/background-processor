@@ -2,6 +2,7 @@
 
 #include "imageNtscFilter.h"
 
+#include <Base/Main/imageProcess.h>
 #include <EASTL/vector.h>
 #include <External/blargg_ntsc/snes_ntsc.h>
 
@@ -44,10 +45,19 @@ Image applyNtscFilter(const PalettizedImage& palettizedImg)
 		auto palImgIter = palettizedImg.data.begin();
 		auto palImgEnd = palettizedImg.data.end();
 		auto snesImgIter = snesImgData.begin();
-		
-		for (; palImgIter != palImgEnd; ++palImgIter, ++snesImgIter)
+
+		unsigned int hdmaRowIdx = 0;
+		unsigned char hdmaLineCounter = 0;
+		const PalettizedImage::HdmaTable& hdmaTable = palettizedImg.hdmaTable;
+		PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
+		for (unsigned int i = 0; i < height; ++i)
 		{
-			(*snesImgIter) = palettizedImg.palette[(*palImgIter)];
+			updateHdmaAndPalette(hdmaTable, localPalette, hdmaLineCounter, hdmaRowIdx);
+
+			for (unsigned int j = 0; j < width; ++j, ++snesImgIter, ++palImgIter)
+			{
+				(*snesImgIter) = localPalette[(*palImgIter)];
+			}
 		}
 	}
 
