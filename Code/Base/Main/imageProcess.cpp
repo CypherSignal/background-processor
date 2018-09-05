@@ -94,14 +94,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	{
 		IndexedImageDataIterator begin;
 		IndexedImageDataIterator end;
-		struct  
-		{
-			unsigned int r, g, b;
-		} colorDelta;
+		Color midColor;
 		struct
 		{
-			unsigned char r, g, b;
-		} midColor;
+			unsigned int r, g, b;
+		} delta;
 
 		void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end)
 		{
@@ -120,9 +117,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 				highestChannels.g = max(pxIter->first.g, highestChannels.g);
 				highestChannels.b = max(pxIter->first.b, highestChannels.b);
 			}
-			colorDelta.r = ((1 + highestChannels.r - lowestChannels.r)) * 1;
-			colorDelta.g = ((1 + highestChannels.g - lowestChannels.g)) * 1;
-			colorDelta.b = ((1 + highestChannels.b - lowestChannels.b)) * 1;
+
+			float avgR = (highestChannels.r + lowestChannels.r) / 2.0f;
+			delta.r = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + avgR / 256.0f));
+			delta.g = (unsigned int)sqrt(pow(highestChannels.g - lowestChannels.g, 2.0f) * 4.0f);
+			delta.b = (unsigned int)sqrt(pow(highestChannels.b - lowestChannels.b, 2.0f) * (2.0f + (255 - avgR) / 256.0f));
 
 			midColor.r = (highestChannels.r + lowestChannels.r) / 2;
 			midColor.g = (highestChannels.g + lowestChannels.g) / 2;
@@ -137,7 +136,6 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	unsigned int idx = 0;
 	for (auto px : out.srcImg.data)
 	{
-		// TODO: convert px from RGB to CIE color space
 		indexedImageData.push_back(make_pair(px, idx));
 		++idx;
 	}
@@ -158,7 +156,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		int channelToSort = 0;
 		for (auto deltaSearchIter = bucketRanges.begin(); deltaSearchIter != bucketRanges.end(); ++deltaSearchIter)
 		{
-			auto delta = deltaSearchIter->colorDelta;
+			auto delta = deltaSearchIter->delta;
 			if (delta.r > maxDelta)
 			{
 				maxDelta = delta.r;
@@ -180,45 +178,31 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		}
 
 		IndexedImageDataIterator medianIter;
-		unsigned char medianColor;
-
-		// TODO - this sorting of buckets is by far the most costly part of the algorithm now.
-		// TODO - Ultimately it only tries to find a median color - look at median-of-medians algorithm to find medianColor, and partition around that value
 		switch (channelToSort)
 		{
 		case 0:
-			// sort around red
-			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.r < b.first.r; });
-			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.r;
-			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r == medianColor; });
-			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->begin)
-				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.r != medianColor; });
+			// partition around red
+			medianIter = partition(bucketIter->begin, bucketIter->end, 
+				[medianColor = bucketIter->midColor.r](const pair<Color, unsigned int>& a) 
+				{ return a.first.r <= medianColor; });
 			break;
 		case 1:
-			// sort around green
-			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.g < b.first.g; });
-			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.g;
-			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g == medianColor; });
-			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->begin)
-				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.g != medianColor; });
+			// partition around green
+			medianIter = partition(bucketIter->begin, bucketIter->end,
+				[medianColor = bucketIter->midColor.g](const pair<Color, unsigned int>& a)
+			{ return a.first.g <= medianColor; });
 			break;
 		case 2:
-			// sort around blue
-			sort(bucketIter->begin, bucketIter->end, [](const pair<Color, unsigned int>& a, const pair<Color, unsigned int>& b) { return a.first.b < b.first.b; });
-			medianColor = (bucketIter->begin + ((bucketIter->end - bucketIter->begin) / 2))->first.b;
-			medianIter = find_if(bucketIter->begin, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b == medianColor; });
-			// if we matched the first (i.e. the median color ends up filling half of the partition) then find the first entry that doesn't match the median and we'll split on that
-			if (medianIter == bucketIter->begin)
-				medianIter = find_if(medianIter, bucketIter->end, [medianColor](const pair<Color, unsigned int>& a) { return a.first.b != medianColor; });
+			// partition around blue
+			medianIter = partition(bucketIter->begin, bucketIter->end,
+				[medianColor = bucketIter->midColor.b](const pair<Color, unsigned int>& a)
+			{ return a.first.b <= medianColor; });
 			break;
 		};
 
 		// split the bucket about the median, and shift the current bucketrange down correspondingly
 		BucketRange& newRange = bucketRanges.push_back();
 		newRange.setBucketRange(medianIter, bucketIter->end);
-		
 		bucketIter->setBucketRange(bucketIter->begin, medianIter);
 	}
 
@@ -237,9 +221,9 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		// use the indices of the buckets to sample from the original image in the untransformed space
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
-			accumulatedR += out.srcImg.data[pxIter->second].r;
-			accumulatedG += out.srcImg.data[pxIter->second].g;
-			accumulatedB += out.srcImg.data[pxIter->second].b;
+			accumulatedR += pxIter->first.r;
+			accumulatedG += pxIter->first.g;
+			accumulatedB += pxIter->first.b;
 		}
 
 		size_t bucketSize = bucket.end - bucket.begin;
