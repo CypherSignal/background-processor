@@ -47,25 +47,12 @@ Image loadImage(const std::filesystem::path& filename)
 template<typename T>
 void writeToFile(T* data, size_t count, const std::filesystem::path& filePath)
 {
-	static struct WriteFileTaskCollection
+	FILE* out;
+	if (!fopen_s(&out, filePath.generic_string().c_str(), "wb"))
 	{
-		concurrency::task_group tasks;
-		~WriteFileTaskCollection() { tasks.wait(); }
-	} queuedTasks;
-
-	size_t bufferSize = sizeof(T) * count;
-	void* buffer = new char[bufferSize];
-	memcpy(buffer, data, bufferSize);
-	queuedTasks.tasks.run([buffer, bufferSize, filePath]()
-	{
-		FILE* out;
-		if (!fopen_s(&out, filePath.generic_string().c_str(), "wb"))
-		{
-			fwrite(buffer, 1, bufferSize, out);
-			fclose(out);
-			delete buffer;
-		}
-	});
+		fwrite(data, sizeof(T), count, out);
+		fclose(out);
+	}
 }
 
 void saveImage(const Image& img, const std::filesystem::path& file)
