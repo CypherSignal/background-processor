@@ -85,52 +85,59 @@ void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 	}
 }
 
-typedef vector<pair<Color, unsigned int>> IndexedImageData;
-typedef IndexedImageData::iterator IndexedImageDataIterator;
-Color calculateColorDelta(IndexedImageDataIterator begin, IndexedImageDataIterator end)
-{
-	// find which channel has most variance
-	Color lowestChannels{ 255,255,255 };
-	Color highestChannels{ 0,0,0 };
-	for (auto pxIter = begin; pxIter != end; ++pxIter)
-	{
-		lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
-		lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
-		lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
-		highestChannels.r = max(pxIter->first.r, highestChannels.r);
-		highestChannels.g = max(pxIter->first.g, highestChannels.g);
-		highestChannels.b = max(pxIter->first.b, highestChannels.b);
-	}
-	Color delta;
-	delta.r = highestChannels.r - lowestChannels.r;
-	delta.g = highestChannels.g - lowestChannels.g;
-	delta.b = highestChannels.b - lowestChannels.b;
-	return delta;
-}
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	// copy the src image data into an array that will let us track how it gets sorted and reordered
+	typedef vector<pair<Color, unsigned int>> IndexedImageData;
+	typedef IndexedImageData::iterator IndexedImageDataIterator;
 	struct BucketRange
 	{
 		IndexedImageDataIterator begin;
 		IndexedImageDataIterator end;
-		Color colorDelta;
+		struct  
+		{
+			unsigned int r, g, b;
+		} colorDelta;
+		struct
+		{
+			unsigned char r, g, b;
+		} midColor;
 
 		void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end)
 		{
 			begin = _begin;
 			end = _end;
-			colorDelta = calculateColorDelta(begin, end);
+
+			// find which channel has most variance
+			Color lowestChannels{ 255,255,255 };
+			Color highestChannels{ 0,0,0 };
+			for (auto pxIter = begin; pxIter != end; ++pxIter)
+			{
+				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
+				lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
+				lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
+				highestChannels.r = max(pxIter->first.r, highestChannels.r);
+				highestChannels.g = max(pxIter->first.g, highestChannels.g);
+				highestChannels.b = max(pxIter->first.b, highestChannels.b);
+			}
+			colorDelta.r = ((1 + highestChannels.r - lowestChannels.r)) * 1;
+			colorDelta.g = ((1 + highestChannels.g - lowestChannels.g)) * 1;
+			colorDelta.b = ((1 + highestChannels.b - lowestChannels.b)) * 1;
+
+			midColor.r = (highestChannels.r + lowestChannels.r) / 2;
+			midColor.g = (highestChannels.g + lowestChannels.g) / 2;
+			midColor.b = (highestChannels.b + lowestChannels.b) / 2;
 		}
 	};
 
+	// copy the src image data into an array that will let us track how it gets sorted and reordered
 	IndexedImageData indexedImageData;
 	indexedImageData.reserve(out.srcImg.data.size());
 	
 	unsigned int idx = 0;
 	for (auto px : out.srcImg.data)
 	{
+		// TODO: convert px from RGB to CIE color space
 		indexedImageData.push_back(make_pair(px, idx));
 		++idx;
 	}
@@ -147,11 +154,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	while (bucketRanges.size() < colorsToFind)
 	{
 		auto bucketIter = bucketRanges.begin();
-		unsigned char maxDelta = 0;
+		unsigned int maxDelta = 0;
 		int channelToSort = 0;
 		for (auto deltaSearchIter = bucketRanges.begin(); deltaSearchIter != bucketRanges.end(); ++deltaSearchIter)
 		{
-			Color delta = deltaSearchIter->colorDelta;
+			auto delta = deltaSearchIter->colorDelta;
 			if (delta.r > maxDelta)
 			{
 				maxDelta = delta.r;
@@ -223,16 +230,16 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	out.palettizedImg.palette.push_back(0); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
 	{
-		// calculate the average in the provided bucket, and update all values to that one
 		long accumulatedR = 0;
 		long accumulatedG = 0;
 		long accumulatedB = 0;
 
+		// use the indices of the buckets to sample from the original image in the untransformed space
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
+			accumulatedR += out.srcImg.data[pxIter->second].r;
+			accumulatedG += out.srcImg.data[pxIter->second].g;
+			accumulatedB += out.srcImg.data[pxIter->second].b;
 		}
 
 		size_t bucketSize = bucket.end - bucket.begin;
