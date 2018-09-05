@@ -8,6 +8,7 @@
 using namespace eastl;
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out);
+void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessImageStorage& out);
 
 void updateHdmaAndPalette(const PalettizedImage::HdmaTable &hdmaTable, PalettizedImage::PaletteTable &activePalette, unsigned char &hdmaLineCounter, unsigned int &hdmaRowIdx)
 {
@@ -61,74 +62,86 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	if (params.lowBitDepthPalette)
+	if (params.generateHdmaData)
 	{
-		// todo
+		quantizeToSinglePaletteWithHdma(params, out);
 	}
 	else
 	{
 		quantizeToSinglePalette(params, out);
 
-		if (params.generateHdmaData)
-		{
-			out.palettizedImg.hdmaTable.resize(224);
-			unsigned char i = 0;
-			for (auto& hdmaRow : out.palettizedImg.hdmaTable)
-			{
-				hdmaRow.lineCounter = 0x01;
-				hdmaRow.cgramAddr = i;
-				hdmaRow.cgramData[1] = 0;
-				hdmaRow.cgramData[0] = i;
-				++i;
-			}
-		}
+		//if (params.generateHdmaData)
+		//{
+		//	out.palettizedImg.hdmaTable.resize(224);
+		//	unsigned char i = 0;
+		//	for (auto& hdmaRow : out.palettizedImg.hdmaTable)
+		//	{
+		//		hdmaRow.lineCounter = 0x01;
+		//		hdmaRow.cgramAddr = i;
+		//		hdmaRow.cgramData[1] = 0;
+		//		hdmaRow.cgramData[0] = i;
+		//		++i;
+		//	}
+		//}
 	}
 }
 
+typedef vector<pair<Color, unsigned int>> IndexedImageData;
+typedef IndexedImageData::iterator IndexedImageDataIterator;
+struct IndexedImageBucketRange
+{
+	IndexedImageDataIterator begin;
+	IndexedImageDataIterator end;
+	Color midColor;
+	int delta;
+	int channelDelta;
+
+	void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end)
+	{
+		begin = _begin;
+		end = _end;
+
+		// find which channel has most variance
+		Color lowestChannels{ 255,255,255 };
+		Color highestChannels{ 0,0,0 };
+		for (auto pxIter = begin; pxIter != end; ++pxIter)
+		{
+			lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
+			lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
+			lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
+			highestChannels.r = max(pxIter->first.r, highestChannels.r);
+			highestChannels.g = max(pxIter->first.g, highestChannels.g);
+			highestChannels.b = max(pxIter->first.b, highestChannels.b);
+		}
+
+		float midR = (highestChannels.r + lowestChannels.r) / 2.0f;
+		int deltaR = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + midR / 256.0f));
+		int deltaG = (unsigned int)sqrt(pow(highestChannels.g - lowestChannels.g, 2.0f) * 4.0f);
+		int deltaB = (unsigned int)sqrt(pow(highestChannels.b - lowestChannels.b, 2.0f) * (2.0f + (255.0f - midR) / 256.0f));
+		
+		if (deltaR >= deltaG && deltaR >= deltaB)
+		{
+			delta = deltaR;
+			channelDelta = 0;
+		}
+		else if (deltaG >= deltaR && deltaG >= deltaB)
+		{
+			delta = deltaG;
+			channelDelta = 1;
+		}
+		else
+		{
+			delta = deltaB;
+			channelDelta = 2;
+		}
+		midColor.r = (highestChannels.r + lowestChannels.r) / 2;
+		midColor.g = (highestChannels.g + lowestChannels.g) / 2;
+		midColor.b = (highestChannels.b + lowestChannels.b) / 2;
+	}
+};
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	typedef vector<pair<Color, unsigned int>> IndexedImageData;
-	typedef IndexedImageData::iterator IndexedImageDataIterator;
-	struct BucketRange
-	{
-		IndexedImageDataIterator begin;
-		IndexedImageDataIterator end;
-		Color midColor;
-		struct
-		{
-			unsigned int r, g, b;
-		} delta;
-
-		void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end)
-		{
-			begin = _begin;
-			end = _end;
-
-			// find which channel has most variance
-			Color lowestChannels{ 255,255,255 };
-			Color highestChannels{ 0,0,0 };
-			for (auto pxIter = begin; pxIter != end; ++pxIter)
-			{
-				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
-				lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
-				lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
-				highestChannels.r = max(pxIter->first.r, highestChannels.r);
-				highestChannels.g = max(pxIter->first.g, highestChannels.g);
-				highestChannels.b = max(pxIter->first.b, highestChannels.b);
-			}
-
-			float avgR = (highestChannels.r + lowestChannels.r) / 2.0f;
-			delta.r = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + avgR / 256.0f));
-			delta.g = (unsigned int)sqrt(pow(highestChannels.g - lowestChannels.g, 2.0f) * 4.0f);
-			delta.b = (unsigned int)sqrt(pow(highestChannels.b - lowestChannels.b, 2.0f) * (2.0f + (255 - avgR) / 256.0f));
-
-			midColor.r = (highestChannels.r + lowestChannels.r) / 2;
-			midColor.g = (highestChannels.g + lowestChannels.g) / 2;
-			midColor.b = (highestChannels.b + lowestChannels.b) / 2;
-		}
-	};
-
 	// copy the src image data into an array that will let us track how it gets sorted and reordered
 	IndexedImageData indexedImageData;
 	indexedImageData.reserve(out.srcImg.data.size());
@@ -140,10 +153,10 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		++idx;
 	}
 
-	vector<BucketRange> bucketRanges;
+	vector<IndexedImageBucketRange> bucketRanges;
 	auto colorsToFind = min(params.maxColors - 1, 255); // we only support 256 colors, minus 1 for the 0th color
 	bucketRanges.reserve(colorsToFind);
-	BucketRange& newRange = bucketRanges.push_back();
+	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end());
 
 	// bucket all of the colours by finding which bucket has the greatest delta across each channel,
@@ -151,34 +164,11 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	// in the end, bucketRanges should have colorsToFind number of buckets, and each should be a unique range
 	while (bucketRanges.size() < colorsToFind)
 	{
-		auto bucketIter = bucketRanges.begin();
-		unsigned int maxDelta = 0;
-		int channelToSort = 0;
-		for (auto deltaSearchIter = bucketRanges.begin(); deltaSearchIter != bucketRanges.end(); ++deltaSearchIter)
-		{
-			auto delta = deltaSearchIter->delta;
-			if (delta.r > maxDelta)
-			{
-				maxDelta = delta.r;
-				channelToSort = 0;
-				bucketIter = deltaSearchIter;
-			}
-			if (delta.g > maxDelta)
-			{
-				maxDelta = delta.g;
-				channelToSort = 1;
-				bucketIter = deltaSearchIter;
-			}
-			if (delta.b > maxDelta)
-			{
-				maxDelta = delta.b;
-				channelToSort = 2;
-				bucketIter = deltaSearchIter;
-			}
-		}
+		auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
+			[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.delta < b.delta; });
 
 		IndexedImageDataIterator medianIter;
-		switch (channelToSort)
+		switch (bucketIter->channelDelta)
 		{
 		case 0:
 			// partition around red
@@ -190,18 +180,18 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 			// partition around green
 			medianIter = partition(bucketIter->begin, bucketIter->end,
 				[medianColor = bucketIter->midColor.g](const pair<Color, unsigned int>& a)
-			{ return a.first.g <= medianColor; });
+				{ return a.first.g <= medianColor; });
 			break;
 		case 2:
 			// partition around blue
 			medianIter = partition(bucketIter->begin, bucketIter->end,
 				[medianColor = bucketIter->midColor.b](const pair<Color, unsigned int>& a)
-			{ return a.first.b <= medianColor; });
+				{ return a.first.b <= medianColor; });
 			break;
 		};
 
 		// split the bucket about the median, and shift the current bucketrange down correspondingly
-		BucketRange& newRange = bucketRanges.push_back();
+		IndexedImageBucketRange& newRange = bucketRanges.push_back();
 		newRange.setBucketRange(medianIter, bucketIter->end);
 		bucketIter->setBucketRange(bucketIter->begin, medianIter);
 	}
@@ -218,7 +208,6 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		long accumulatedG = 0;
 		long accumulatedB = 0;
 
-		// use the indices of the buckets to sample from the original image in the untransformed space
 		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
 		{
 			accumulatedR += pxIter->first.r;
@@ -241,3 +230,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	}
 }
 
+void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessImageStorage& out)
+{
+
+}
