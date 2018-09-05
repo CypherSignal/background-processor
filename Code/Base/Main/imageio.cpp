@@ -43,10 +43,11 @@ Image loadImage(const std::filesystem::path& filename)
 	return img;
 }
 
-
 template<typename T>
 void writeToFile(T* data, size_t count, const std::filesystem::path& filePath)
 {
+	// TODO: having so many repeated open/closes in here is responsible for ~3ms of walltime per image
+	// maybe look at optimizing this (e.g. writing out data to a single, shared, archive)
 	FILE* out;
 	if (!fopen_s(&out, filePath.generic_string().c_str(), "wb"))
 	{
