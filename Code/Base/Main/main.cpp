@@ -18,7 +18,7 @@ void processFile(const ProcessImageParams &params)
 		return;
 
 	// if the image was too big on either dimension, skip out
-	if (storage.srcImg.width > 256 || storage.srcImg.height > 224)
+	if (storage.srcImg.width > MaxWidth || storage.srcImg.height > MaxHeight)
 		return;
 
 	processImage(params, storage);
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
 
 	ProcessImageParams params;
 	params.lowBitDepthPalette = false;
-	params.generateHdmaData = false;
+	params.generateHdmaData = true;
 	params.maxColors = 256;
 	params.outDirPath = outDirPath;
 	if (std::filesystem::is_regular_file(inFilePath))

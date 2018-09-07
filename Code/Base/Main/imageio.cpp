@@ -101,7 +101,7 @@ void saveSnesTiles(const PalettizedImage& img, const std::filesystem::path& file
 	{
 		unsigned char data[64];
 	};
-	const unsigned int MaxTiles = (256 / 8) * (224 / 8) + 1; // +1 to have an empty black tile
+	const unsigned int MaxTiles = (MaxWidth / 8) * (MaxHeight / 8) + 1; // +1 to have an empty black tile
 	eastl::fixed_vector<Tile, MaxTiles, false> snesTiles;
 	
 	unsigned int width = img.width;
@@ -163,7 +163,7 @@ void saveSnesTiles(const PalettizedImage& img, const std::filesystem::path& file
 
 void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesystem::path& file)
 {
-	const unsigned int MaxTiles = (256 / 8) * (224 / 8);
+	const unsigned int MaxTiles = (MaxWidth / 8) * (MaxHeight / 8);
 	eastl::fixed_vector<unsigned short, MaxTiles, false> snesTilemap;
 	snesTilemap.resize(MaxTiles, ((width + 7) / 8) * ((height + 7) / 8));
 	

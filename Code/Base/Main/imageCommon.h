@@ -24,10 +24,13 @@ struct HdmaRow
 	unsigned char cgramData[2];
 };
 
+const unsigned int MaxWidth = 256;
+const unsigned int MaxHeight = 224; // or otherwise, the # of scanlines the SNES outputs
+
 struct PalettizedImage
 {
 	typedef eastl::fixed_vector<unsigned short, 256, false> PaletteTable;
-	typedef eastl::fixed_vector<HdmaRow, 224, false> HdmaTable;
+	typedef eastl::fixed_vector<HdmaRow, MaxHeight, false> HdmaTable;
 	PaletteTable palette;
 	HdmaTable hdmaTable;
 	eastl::vector<unsigned char> data;

@@ -15,6 +15,7 @@
 #include <ppl.h>
 #include <ppltasks.h>
 
+#include <EASTL/array.h>
 #include <EASTL/fixed_vector.h>
 #include <EASTL/sort.h>
 #include <EASTL/utility.h>
