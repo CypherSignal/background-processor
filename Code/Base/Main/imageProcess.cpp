@@ -306,7 +306,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					eastl::find_if(evictionIter, baseBucketRangeIndices.end(),
 						[minScanline, &bucketRanges] (unsigned int a) { return bucketRanges[a].scanlineFirst > minScanline; }),
 					baseBucketRangeIndices.end(),
-					[minScanline, bucketRanges] (unsigned int a, unsigned int b)
+					[minScanline, &bucketRanges] (unsigned int a, unsigned int b)
 					{ return bucketRanges[a].scanlineFirst > minScanline && bucketRanges[a].scanlineFirst < bucketRanges[b].scanlineFirst; });
 
 				// if we could not find a population candidate, then we're done
