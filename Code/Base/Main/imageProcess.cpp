@@ -323,11 +323,11 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 				baseBucketRangeIndices.erase(populationIter);
 
 				{
-					auto unusedEvictionIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), *evictionIter);
+					auto unusedEvictionIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), evictionBucketIndex);
 					if (unusedEvictionIter != unusedBucketRangeIndices.end())
 						unusedBucketRangeIndices.erase_unsorted(unusedEvictionIter);
 
-					auto unusedPopulationIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), *populationIter);
+					auto unusedPopulationIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), populationBucketIndex);
 					if (unusedPopulationIter != unusedBucketRangeIndices.end())
 						unusedBucketRangeIndices.erase_unsorted(unusedPopulationIter);
 				}
