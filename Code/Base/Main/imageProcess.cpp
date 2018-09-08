@@ -83,6 +83,7 @@ struct IndexedImageBucketRange
 	int deltaColor;
 	int channelDelta;
 	Color midColor;
+	unsigned short snesAvgColor;
 
 	void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end, unsigned int width)
 	{
@@ -95,6 +96,9 @@ struct IndexedImageBucketRange
 		{
 			Color lowestChannels{ 255,255,255 };
 			Color highestChannels{ 0,0,0 };
+			long accumulatedR = 0;
+			long accumulatedG = 0;
+			long accumulatedB = 0;
 			for (auto pxIter = _begin; pxIter != _end; ++pxIter)
 			{
 				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
@@ -103,8 +107,17 @@ struct IndexedImageBucketRange
 				highestChannels.r = max(pxIter->first.r, highestChannels.r);
 				highestChannels.g = max(pxIter->first.g, highestChannels.g);
 				highestChannels.b = max(pxIter->first.b, highestChannels.b);
+				accumulatedR += pxIter->first.r;
+				accumulatedG += pxIter->first.g;
+				accumulatedB += pxIter->first.b;
 				pxOnScanline[pxIter->second / width] = true;
 			}
+
+			size_t bucketSize = distance(begin, end);
+			unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
+			unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
+			unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
+			snesAvgColor = (snesB | snesG | snesR);
 
 			float midR = (highestChannels.r + lowestChannels.r) / 2.0f;
 			int deltaR = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + midR / 256.0f));
@@ -131,54 +144,37 @@ struct IndexedImageBucketRange
 			midColor.b = (highestChannels.b + lowestChannels.b) / 2;
 		}
 
-		// determine the first and last scanline a pixel in this bucket appears in, and what the widest gap 
-		// between scanlines is
-		auto scanlineIter = eastl::find(pxOnScanline.begin(), pxOnScanline.end(), true);
-		auto scanlineLastIter = eastl::find(pxOnScanline.rbegin(), pxOnScanline.rend(), true).base();
-		scanlineFirst = (unsigned char)(scanlineIter - pxOnScanline.begin());
-		scanlineLast = (unsigned char)(scanlineLastIter - pxOnScanline.begin());
-
-		unsigned char largestRunningGap = 0;
-		unsigned char largestRunningGapEnd = 0;
-		unsigned char runningGap = 0;
-		for (unsigned char i = scanlineFirst; i != scanlineLast; ++i)
 		{
-			if (pxOnScanline[i])
+			// determine the first and last scanline a pixel in this bucket appears in, and what the widest gap 
+			// between scanlines is
+			auto scanlineIter = eastl::find(pxOnScanline.begin(), pxOnScanline.end(), true);
+			auto scanlineLastIter = eastl::find(pxOnScanline.rbegin(), pxOnScanline.rend(), true).base();
+			scanlineFirst = (unsigned char)(scanlineIter - pxOnScanline.begin());
+			scanlineLast = (unsigned char)(scanlineLastIter - pxOnScanline.begin());
+
+			unsigned char largestRunningGap = 0;
+			unsigned char largestRunningGapEnd = 0;
+			unsigned char runningGap = 0;
+			for (unsigned char i = scanlineFirst; i != scanlineLast; ++i)
 			{
-				if (runningGap > largestRunningGap)
+				if (pxOnScanline[i])
 				{
-					largestRunningGap = runningGap;
-					largestRunningGapEnd = i;
+					if (runningGap > largestRunningGap)
+					{
+						largestRunningGap = runningGap;
+						largestRunningGapEnd = i;
+					}
+					runningGap = 0;
 				}
-				runningGap = 0;
+				else
+				{
+					++runningGap;
+				}
 			}
-			else
-			{
-				++runningGap;
-			}
+
+			scanlineGapSize = largestRunningGap;
+			scanlineGapEnd = largestRunningGapEnd;
 		}
-
-		scanlineGapSize = largestRunningGap;
-		scanlineGapEnd = largestRunningGapEnd;
-	}
-
-	unsigned short getAverageColor()
-	{
-		long accumulatedR = 0;
-		long accumulatedG = 0;
-		long accumulatedB = 0;
-		for (auto pxIter = begin; pxIter != end; ++pxIter)
-		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
-		}
-
-		size_t bucketSize = distance(begin, end);
-		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
-		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
-		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
-		return (snesB | snesG | snesR);
 	}
 };
 
@@ -247,7 +243,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	for (auto bucket : bucketRanges)
 	{
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(bucket.getAverageColor());
+		out.palettizedImg.palette.push_back(bucket.snesAvgColor);
 		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
 			out.palettizedImg.data[px.second] = paletteIdx;
@@ -450,7 +446,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	{
 		auto bucket = bucketRanges[baseBucketRangeIndex];
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back( bucket.getAverageColor());
+		out.palettizedImg.palette.push_back(bucket.snesAvgColor);
 		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
 			out.palettizedImg.data[px.second] = paletteIdx;
@@ -479,7 +475,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline+1));
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
 		hdmaAction.paletteIdx = paletteIdx;
-		hdmaAction.snesColor = bucket.getAverageColor();
+		hdmaAction.snesColor = bucket.snesAvgColor;
 		hdmaActions.push_back(hdmaAction);
 		previousScanline = hdmaAction.scanline;
 
