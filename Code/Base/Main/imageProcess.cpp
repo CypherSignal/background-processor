@@ -197,7 +197,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
-	// bucket all of the colours by finding which bucket has the greatest delta across each channel,
+	// bucket all of the colors by finding which bucket has the greatest delta across each channel,
 	// and split the bucket about the median color of each bucket
 	// in the end, bucketRanges should have colorsToFind number of buckets, and each should be a unique range
 	while (bucketRanges.size() < colorsToFind)
@@ -270,34 +270,34 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
 	fixed_vector<unsigned int, 256 + MaxHeight, false> baseBucketRangeIndices;
+	fixed_vector<unsigned int, MaxHeight, false> hdmaBucketRangeIndices;
+	
 	// first element is what bucket got evicted; second element is what bucket is populating the eviction
 	fixed_vector<pair<unsigned int, unsigned int>, MaxHeight-1, false> hdmaPopulationList; 
 	
 	while (true)
 	{
-		// reset the list of baseBucketRangeIndices
-		fixed_vector<unsigned int, 256 + MaxHeight, false> unusedBucketRangeIndices(bucketRanges.size());
+		// reset the list of baseBucketRangeIndices and hdmaBucketRangeIndices
 		baseBucketRangeIndices.resize(bucketRanges.size());
+		hdmaBucketRangeIndices.clear();
+		hdmaPopulationList.clear();
 		if (bucketRanges.size() >= colorsToFind)
 		{
-			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
-			eastl::generate(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
-
 			// with current set of bucketRanges, generate current hdma table
-			// generate a list of possible buckets to be evicted, and a list of buckets to replace those evictions
+			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
+
+			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
 			eastl::sort(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(),
 				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineLast < bucketRanges[b].scanlineLast; });
 
-			hdmaPopulationList.clear();
-
-			unsigned char minScanline = 0;
 			// advance through the list of bucket ranges, finding candidates that can evict a color
+			unsigned char minScanline = 0;
 			for (auto evictionIter = baseBucketRangeIndices.begin(); evictionIter != baseBucketRangeIndices.end(); ++evictionIter)
 			{
 				minScanline = max(bucketRanges[*evictionIter].scanlineLast, minScanline);
 				
 				// find the element with the _lowest_ first scanline that is >= our minimum scanline target
-				auto populationIter = eastl::min_element(
+				auto hdmaBucketIndexIter = eastl::min_element(
 					eastl::find_if(evictionIter, baseBucketRangeIndices.end(),
 						[minScanline, &bucketRanges] (unsigned int a) { return bucketRanges[a].scanlineFirst > minScanline; }),
 					baseBucketRangeIndices.end(),
@@ -305,40 +305,30 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					{ return bucketRanges[a].scanlineFirst > minScanline && bucketRanges[a].scanlineFirst < bucketRanges[b].scanlineFirst; });
 
 				// if we could not find a population candidate, then we're done
-				if (populationIter == baseBucketRangeIndices.end())
+				if (hdmaBucketIndexIter == baseBucketRangeIndices.end())
 					break;
 
 				// remove the population-candidate from baseBucketList - this is now a bucket that will be HDMA'd into the palette.
 				// (note that populationIter is guaranteed to be after evictionIter so that iterator is not invalidated)
-				// TODO: this system will preclude the ability for 1 palette entry to have 2 entries dma'd into it over time.
-				//		there may be a slightly higher quality way of handling this where searching for PopulationIters _also_ checks
-				//		for entries we've already marked (but we STILL want to iterate over them as _eviction candidates_)
 				auto evictionBucketIndex = *evictionIter;
-				auto populationBucketIndex = *populationIter;
-				baseBucketRangeIndices.erase(populationIter);
+				auto hdmaBucketIndex = *hdmaBucketIndexIter;
+				baseBucketRangeIndices.erase(hdmaBucketIndexIter);
 
-				auto unusedEvictionIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), evictionBucketIndex);
-				if (unusedEvictionIter != unusedBucketRangeIndices.end())
-					unusedBucketRangeIndices.erase_unsorted(unusedEvictionIter);
+				hdmaBucketRangeIndices.push_back(hdmaBucketIndex);
+				hdmaPopulationList.push_back(make_pair(evictionBucketIndex, hdmaBucketIndex));
+				++minScanline;
 
-				auto unusedPopulationIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), populationBucketIndex);
-				if (unusedPopulationIter != unusedBucketRangeIndices.end())
-					unusedBucketRangeIndices.erase_unsorted(unusedPopulationIter);
-
-				// we can conclude that we have enough HDMA candidates that we can continue to split based on colours,
+				// we can conclude that we have enough HDMA candidates that we can continue to split based on colors,
 				// so skip out of the current process and let the loop continue
 				if (baseBucketRangeIndices.size() < colorsToFind)
 					break;
-
- 				hdmaPopulationList.push_back(make_pair(evictionBucketIndex, populationBucketIndex));
-				++minScanline;
 			}
 		}
 
-		// we can conclude that we have enough HDMA candidates that we can continue to split based on colours, so do so
+		// we can still split on colors
 		if (baseBucketRangeIndices.size() < colorsToFind)
 		{
-			// first bucket all of the colours by finding which bucket has the greatest delta across each channel,
+			// first bucket all of the colors by finding which bucket has the greatest delta across each channel,
 			// and split the bucket about the median color of each bucket
 			auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
 				[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.deltaColor < b.deltaColor; });
@@ -372,31 +362,32 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			bucketIter->setBucketRange(bucketIter->begin, medianIter, out.srcImg.width);
 		}
 		// if we can still fill up the hdma list, split on scanline gap
-		else if (hdmaPopulationList.size() < hdmaPopulationList.capacity())
+		else if (hdmaBucketRangeIndices.size() < hdmaBucketRangeIndices.capacity())
 		{
 			//	find a bucket that WOULD contribute to hdma table and partition about that
-			//	"Would contribute" means that the "scanlineGapEnd" matches with something else from the baseBucketRange,
-			//			while still not colliding with other hdmaBucketCandidates
+			//	"Would contribute" means that the "scanlineGapEnd" matches with something else from the list of bucket ranges,
+			//			while still not colliding with other hdma actions
 			eastl::array<bool, MaxHeight> hdmaScanlineInUse;
 			hdmaScanlineInUse.fill(false);
-			for (auto hdmaPopulation : hdmaPopulationList)
+			auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
+			for (auto hdmaBucketIndexIter = hdmaBucketRangeIndices.rbegin(); hdmaBucketIndexIter != hdmaBucketRangeIndexEnd; ++hdmaBucketIndexIter)
 			{
-				unsigned char scanlineToMark = bucketRanges[hdmaPopulation.first].scanlineLast;
-				while (scanlineToMark < MaxHeight && hdmaScanlineInUse[scanlineToMark])
-					++scanlineToMark;
-				if (scanlineToMark < MaxHeight)
+				unsigned char scanlineToMark = bucketRanges[*hdmaBucketIndexIter].scanlineFirst;
+				while (scanlineToMark > 0 && hdmaScanlineInUse[scanlineToMark])
+					--scanlineToMark;
+				if (scanlineToMark > 0)
 					hdmaScanlineInUse[scanlineToMark] = true;
-				else
+				else // this should never be hit!
 					scanlineToMark = scanlineToMark;
 			}
 
-			auto bucketIter = eastl::find_if(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(),
-				[&bucketRanges, &unusedBucketRangeIndices, &hdmaScanlineInUse]
-				(unsigned int a)
+			auto bucketIter = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
+				[&bucketRanges, &hdmaScanlineInUse]
+				(const IndexedImageBucketRange& bucket)
 				{
 					// find what scanline this bucket could be loaded in on, first
-					auto maxScanline = bucketRanges[a].scanlineGapEnd;
-					auto minScanline = maxScanline - bucketRanges[a].scanlineGapSize;
+					auto maxScanline = bucket.scanlineGapEnd;
+					auto minScanline = maxScanline - bucket.scanlineGapSize;
 
 					// advance minScanline forward one-by-one for as long as there's an entry in the hdmaPopulationList 
 					// that refers to a bucketRange with a matching scanlineLast, so that minScanline ends up 
@@ -407,25 +398,30 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					if (minScanline >= maxScanline)
 						return false;
 
-					auto evictionCandidate = eastl::find_if(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(),
-						[minScanline, &bucketRanges](unsigned int a)
-						{ return bucketRanges[a].scanlineLast < minScanline; } );
+					auto evictionCandidate = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
+						[minScanline, &hdmaScanlineInUse](const IndexedImageBucketRange& bucket)
+						{ 
+							auto evictionScanline = bucket.scanlineLast;
+							while (evictionScanline < minScanline && hdmaScanlineInUse[evictionScanline])
+								++evictionScanline;
+							return evictionScanline < minScanline; 
+						});
 
-					return evictionCandidate != unusedBucketRangeIndices.end();
+					return evictionCandidate != bucketRanges.end();
 				});
 	
 			// if a bucket could not positively contribute, then break
-			if (bucketIter == unusedBucketRangeIndices.end())
+			if (bucketIter == bucketRanges.end())
 				break;
 			
 			// partition bucket about scanline and continue
-			IndexedImageBucketRange& bucketToSplit = bucketRanges[*bucketIter];
-			auto medianIter = partition(bucketToSplit.begin, bucketToSplit.end,
-				[scanlineSplit = bucketToSplit.scanlineGapEnd, width = out.srcImg.width](const pair<Color, unsigned int>& a)
+			//IndexedImageBucketRange& bucketToSplit = bucketRanges[*bucketIter];
+			auto medianIter = partition(bucketIter->begin, bucketIter->end,
+				[scanlineSplit = bucketIter->scanlineGapEnd, width = out.srcImg.width](const pair<Color, unsigned int>& a)
 				{ return a.second / width < scanlineSplit; });
 			IndexedImageBucketRange& newRange = bucketRanges.push_back();
-			newRange.setBucketRange(medianIter, bucketToSplit.end, out.srcImg.width);
-			bucketToSplit.setBucketRange(bucketToSplit.begin, medianIter, out.srcImg.width);
+			newRange.setBucketRange(medianIter, bucketIter->end, out.srcImg.width);
+			bucketIter->setBucketRange(bucketIter->begin, medianIter, out.srcImg.width);
 		}
 		else
 		{
@@ -467,10 +463,32 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	unsigned char previousScanline = 0;
 	for (auto hdmaPopulation : hdmaPopulationList)
 	{
-		auto bucket = bucketRanges[hdmaPopulation.second];
-		auto baseBucketRangeIter = eastl::find(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), hdmaPopulation.first);
-		unsigned char paletteIdx = (unsigned char)(baseBucketRangeIter - baseBucketRangeIndices.begin() + 1);
+		// find what paletteIdx this hdma action should occur in
+		unsigned char paletteIdx;
+		{
+			auto bucketIndexToEvict = hdmaPopulation.first;
+			while (true)
+			{
+				auto baseBucketIndexIter = eastl::find(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), bucketIndexToEvict);
+				// couldn't directly find the baseBucketRange that we're evicting, so we must be evicting something else in the hdmaPopulation
+				if (baseBucketIndexIter == baseBucketRangeIndices.end())
+				{
+					auto hdmaPopulationIter = eastl::find_if(hdmaPopulationList.begin(), hdmaPopulationList.end(),
+						[bucketIndexToEvict](const pair<unsigned int, unsigned int>& hdmaPopulation)
+					{
+						return hdmaPopulation.second == bucketIndexToEvict;
+					});
+					bucketIndexToEvict = hdmaPopulationIter->first;
+				}
+				else
+				{
+					paletteIdx = (unsigned char)(baseBucketIndexIter - baseBucketRangeIndices.begin() + 1);
+					break;
+				}
+			}
+		}
 
+		auto bucket = bucketRanges[hdmaPopulation.second];
 		HdmaAction hdmaAction;
 		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline+1));
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
