@@ -161,6 +161,25 @@ struct IndexedImageBucketRange
 		scanlineGapSize = largestRunningGap;
 		scanlineGapEnd = largestRunningGapEnd;
 	}
+
+	unsigned short getAverageColor()
+	{
+		long accumulatedR = 0;
+		long accumulatedG = 0;
+		long accumulatedB = 0;
+		for (auto pxIter = begin; pxIter != end; ++pxIter)
+		{
+			accumulatedR += pxIter->first.r;
+			accumulatedG += pxIter->first.g;
+			accumulatedB += pxIter->first.b;
+		}
+
+		size_t bucketSize = distance(begin, end);
+		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
+		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
+		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
+		return (snesB | snesG | snesR);
+	}
 };
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out)
@@ -227,29 +246,12 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	out.palettizedImg.palette.push_back(0); // add 0 because that's a translucent pixel that should not be used
 	for (auto bucket : bucketRanges)
 	{
-		long accumulatedR = 0;
-		long accumulatedG = 0;
-		long accumulatedB = 0;
-
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
-		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
-		}
-
-		size_t bucketSize = bucket.end - bucket.begin;
-		
-		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
-		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
-		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
-		unsigned short snesColor = snesB | snesG | snesR;
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(snesColor);
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
+		out.palettizedImg.palette.push_back(bucket.getAverageColor());
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
-			out.palettizedImg.data[pxIter->second] = paletteIdx;
-		}
+			out.palettizedImg.data[px.second] = paletteIdx;
+		});
 	}
 }
 
@@ -278,11 +280,8 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	while (true)
 	{
 		// reset the list of baseBucketRangeIndices
-		baseBucketRangeIndices.resize(bucketRanges.size());
-		
 		fixed_vector<unsigned int, 256 + MaxHeight, false> unusedBucketRangeIndices(bucketRanges.size());
-
-
+		baseBucketRangeIndices.resize(bucketRanges.size());
 		if (bucketRanges.size() >= colorsToFind)
 		{
 			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
@@ -322,15 +321,13 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 				auto populationBucketIndex = *populationIter;
 				baseBucketRangeIndices.erase(populationIter);
 
-				{
-					auto unusedEvictionIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), evictionBucketIndex);
-					if (unusedEvictionIter != unusedBucketRangeIndices.end())
-						unusedBucketRangeIndices.erase_unsorted(unusedEvictionIter);
+				auto unusedEvictionIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), evictionBucketIndex);
+				if (unusedEvictionIter != unusedBucketRangeIndices.end())
+					unusedBucketRangeIndices.erase_unsorted(unusedEvictionIter);
 
-					auto unusedPopulationIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), populationBucketIndex);
-					if (unusedPopulationIter != unusedBucketRangeIndices.end())
-						unusedBucketRangeIndices.erase_unsorted(unusedPopulationIter);
-				}
+				auto unusedPopulationIter = eastl::find(unusedBucketRangeIndices.begin(), unusedBucketRangeIndices.end(), populationBucketIndex);
+				if (unusedPopulationIter != unusedBucketRangeIndices.end())
+					unusedBucketRangeIndices.erase_unsorted(unusedPopulationIter);
 
 				// we can conclude that we have enough HDMA candidates that we can continue to split based on colours,
 				// so skip out of the current process and let the loop continue
@@ -339,10 +336,6 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 
  				hdmaPopulationList.push_back(make_pair(evictionBucketIndex, populationBucketIndex));
 				++minScanline;
-				// if we're maxed out on hdma candidates, then we need to exit here // TODO check if this condition is ever actually hit.
-				// It may be impossible, given minScanline's modification above?
-				if (hdmaPopulationList.size() == MaxHeight)
-					break;
 			}
 		}
 
@@ -445,7 +438,6 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		}
 	}
 
-
 	// now that the colors have been bucketed, calculate the avg color of each bucket to determine the image's palette 
 	out.palettizedImg.width = out.srcImg.width;
 	out.palettizedImg.height = out.srcImg.height;
@@ -457,29 +449,12 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	for (auto baseBucketRangeIndex : baseBucketRangeIndices)
 	{
 		auto bucket = bucketRanges[baseBucketRangeIndex];
-		long accumulatedR = 0;
-		long accumulatedG = 0;
-		long accumulatedB = 0;
-
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
-		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
-		}
-
-		size_t bucketSize = bucket.end - bucket.begin;
-
-		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
-		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
-		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
-		unsigned short snesColor = snesB | snesG | snesR;
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(snesColor);
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
+		out.palettizedImg.palette.push_back( bucket.getAverageColor());
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
-			out.palettizedImg.data[pxIter->second] = paletteIdx;
-		}
+			out.palettizedImg.data[px.second] = paletteIdx;
+		});
 	}
 
 	// next, go through the HDMA population list, to do two things:
@@ -497,60 +472,33 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	for (auto hdmaPopulation : hdmaPopulationList)
 	{
 		auto bucket = bucketRanges[hdmaPopulation.second];
-		long accumulatedR = 0;
-		long accumulatedG = 0;
-		long accumulatedB = 0;
-
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
-		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
-		}
-
-		size_t bucketSize = bucket.end - bucket.begin;
-
-		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
-		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
-		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
-		unsigned short snesColor = snesB | snesG | snesR;
-		
 		auto baseBucketRangeIter = eastl::find(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), hdmaPopulation.first);
 		unsigned char paletteIdx = (unsigned char)(baseBucketRangeIter - baseBucketRangeIndices.begin() + 1);
 
 		HdmaAction hdmaAction;
 		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline+1));
-		previousScanline = hdmaAction.scanline;
-
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
 		hdmaAction.paletteIdx = paletteIdx;
-		hdmaAction.snesColor = snesColor;
+		hdmaAction.snesColor = bucket.getAverageColor();
 		hdmaActions.push_back(hdmaAction);
+		previousScanline = hdmaAction.scanline;
 
-		for (auto pxIter = bucket.begin; pxIter != bucket.end; ++pxIter)
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
-			out.palettizedImg.data[pxIter->second] = paletteIdx;
-		}
+			out.palettizedImg.data[px.second] = paletteIdx;
+		});
 	}
 
-	//eastl::sort(hdmaActions.begin(), hdmaActions.end(), [](const HdmaAction& a, const HdmaAction& b) { return a.scanline < b.scanline; });
 	// add a fake hdma action to close off the table
 	unsigned int actualHdmaActions = (unsigned int)hdmaActions.size();
 	hdmaActions.push_back({ 224, 0,0 });
 	// we need a base-line entry because we don't start the hdma on scanline 0
-	{
-		HdmaRow hdmaRow;
-		hdmaRow.lineCounter = hdmaActions[0].scanline;
-		hdmaRow.cgramAddr = 0;
-		hdmaRow.cgramData[1] = 0;
-		hdmaRow.cgramData[0] = 0;
-		out.palettizedImg.hdmaTable.push_back(hdmaRow);
-	}
+	out.palettizedImg.hdmaTable.push_back({ hdmaActions[0].scanline, 0, 0, {0,0} });
 	for (unsigned int i = 0; i < actualHdmaActions; ++i)
 	{
 		const HdmaAction& hdmaAction = hdmaActions[i];
 		HdmaRow hdmaRow;
-		hdmaRow.lineCounter = hdmaActions[i+1].scanline - hdmaActions[i].scanline;
+		hdmaRow.lineCounter = hdmaActions[i+1].scanline - hdmaAction.scanline;
 		hdmaRow.cgramAddr = hdmaAction.paletteIdx;
 		hdmaRow.cgramData[1] = (unsigned char)((hdmaAction.snesColor & 0x7f00) >> 8);
 		hdmaRow.cgramData[0] = (unsigned char)((hdmaAction.snesColor & 0x00ff) >> 0);
