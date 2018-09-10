@@ -179,7 +179,36 @@ void saveSnesTilemap(unsigned int width, unsigned int height, const std::filesys
 	writeToFile(snesTilemap.data(), snesTilemap.size(), file);
 }
 
-void saveSnesHdmaTable(const PalettizedImage::HdmaTable& hdmaTable, const std::filesystem::path &file)
+void saveSnesHdmaTable(const PalettizedImage& img, const std::filesystem::path &file)
 {
-	writeToFile(hdmaTable.data(), hdmaTable.size(), file);
+	struct HdmaRow
+	{
+		unsigned char lineCounter; // should never be > 0x7f - "repeat" functionality in export doesn't exist (yet?).
+		const unsigned char dummy = 0; // dummy byte that should be 0 - not used by hdma because it's delivered alongside cgramAddr
+		unsigned char cgramAddr;
+		unsigned char cgramData[2];
+	};
+
+	for (unsigned int i = 0; i < img.hdmaTables.size(); ++i)
+	{
+		char fileSuffix[8];
+		snprintf(fileSuffix, 8, "-%d", i);
+		auto localPath = file;
+		localPath.concat(fileSuffix);
+
+		eastl::fixed_vector<HdmaRow, 224, false> hdmaOutput;
+		const auto& hdmaActions = img.hdmaTables[i];
+		for (const auto& hdmaAction : hdmaActions)
+		{
+			const auto& hdmaAction = hdmaActions[i];
+			HdmaRow hdmaRow;
+			hdmaRow.lineCounter = hdmaAction.lineCount;
+			hdmaRow.cgramAddr = hdmaAction.paletteIdx;
+			hdmaRow.cgramData[1] = (unsigned char)((hdmaAction.snesColor & 0x7f00) >> 8);
+			hdmaRow.cgramData[0] = (unsigned char)((hdmaAction.snesColor & 0x00ff) >> 0);
+			hdmaOutput.push_back(hdmaRow);
+		}
+
+		writeToFile(hdmaOutput.data(), hdmaOutput.size(), localPath);
+	}
 }

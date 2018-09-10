@@ -70,7 +70,7 @@ void processFile(const ProcessImageParams &params)
 		[&params, &storage]
 		{
 			std::filesystem::path outSnesHmdaImgPath = params.outDirPath / params.inFilePath.stem().concat(".hdma");
-			saveSnesHdmaTable(storage.palettizedImg.hdmaTable,outSnesHmdaImgPath);
+			saveSnesHdmaTable(storage.palettizedImg,outSnesHmdaImgPath);
 		}
 	);
 }

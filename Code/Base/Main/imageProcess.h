@@ -26,6 +26,8 @@ struct ProcessImageStorage
 };
 
 Image getDepalettizedImage(const PalettizedImage& palettizedImg);
+eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& palettizedImg);
+
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out);
 
 // utility for use when depalettizing the image based on hdma data

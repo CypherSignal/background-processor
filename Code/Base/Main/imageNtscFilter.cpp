@@ -36,30 +36,10 @@ static SnesNtscObject s_snesNtscObj;
 Image applyNtscFilter(const PalettizedImage& palettizedImg)
 {
 	// prep the data for input into the ntsc filter
-	eastl::vector<unsigned short> snesImgData;
-	snesImgData.resize(palettizedImg.data.size());
-	unsigned int width = palettizedImg.width;
-	unsigned int height = palettizedImg.height;
+	auto width = palettizedImg.width;
+	auto height = palettizedImg.height;
 
-	{
-		auto palImgIter = palettizedImg.data.begin();
-		auto palImgEnd = palettizedImg.data.end();
-		auto snesImgIter = snesImgData.begin();
-
-		unsigned int hdmaRowIdx = 0;
-		unsigned char hdmaLineCounter = 0;
-		const PalettizedImage::HdmaTable& hdmaTable = palettizedImg.hdmaTable;
-		PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
-		for (unsigned int i = 0; i < height; ++i)
-		{
-			updateHdmaAndPalette(hdmaTable, localPalette, hdmaLineCounter, hdmaRowIdx);
-
-			for (unsigned int j = 0; j < width; ++j, ++snesImgIter, ++palImgIter)
-			{
-				(*snesImgIter) = localPalette[(*palImgIter)];
-			}
-		}
-	}
+	eastl::vector<unsigned short> snesImgData = getDepalettizedSnesImage(palettizedImg);
 
 	// run the filter
 	eastl::vector<char> filteredData;

@@ -16,8 +16,8 @@ void updateHdmaAndPalette(const PalettizedImage::HdmaTable &hdmaTable, Palettize
 	if (!hdmaLineCounter && hdmaRowIdx < hdmaTable.size())
 	{
 		const HdmaRow& activeHdmaRow = hdmaTable[hdmaRowIdx];
-		hdmaLineCounter = activeHdmaRow.lineCounter;
-		activePalette[activeHdmaRow.cgramAddr] = ((unsigned short)activeHdmaRow.cgramData[1] << 8 | activeHdmaRow.cgramData[0]);
+		hdmaLineCounter = activeHdmaRow.lineCount;
+		activePalette[activeHdmaRow.paletteIdx] = activeHdmaRow.snesColor;
 
 		// terminate the hdma updates if fetched linecounter was 0
 		if (hdmaLineCounter)
@@ -34,18 +34,18 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 	newImg.width = palettizedImg.width;
 	newImg.height = palettizedImg.height;
 	newImg.data.resize(newImg.width * newImg.height);
-	auto newImgIter = newImg.data.begin();
-	auto newImgEnd = newImg.data.end();
 	auto palImgIter = palettizedImg.data.begin();
+	auto newImgIter = newImg.data.begin();
 
 	unsigned int hdmaRowIdx = 0;
-	unsigned char hdmaLineCounter = 0;
-	const PalettizedImage::HdmaTable& hdmaTable = palettizedImg.hdmaTable;
+	eastl::fixed_vector<unsigned char, 8, false> hdmaLineCounters(palettizedImg.hdmaTables.size(), 0);
 	PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
-
 	for (unsigned int i = 0; i < newImg.height; ++i)
 	{
-		updateHdmaAndPalette(hdmaTable, localPalette, hdmaLineCounter, hdmaRowIdx);
+		for (unsigned int i = 0; i < palettizedImg.hdmaTables.size(); ++i)
+		{
+			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIdx);
+		}
 
 		for (unsigned int j = 0; j < newImg.width; ++j, ++newImgIter, ++palImgIter)
 		{
@@ -59,6 +59,34 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 	}
 
 	return newImg;
+}
+
+eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& palettizedImg)
+{
+	eastl::vector<unsigned short> snesImgData;
+	unsigned int width = palettizedImg.width;
+	unsigned int height = palettizedImg.height;
+	snesImgData.resize(palettizedImg.data.size());
+	auto palImgIter = palettizedImg.data.begin();
+	auto snesImgIter = snesImgData.begin();
+
+	unsigned int hdmaRowIdx = 0;
+	eastl::fixed_vector<unsigned char, 8, false> hdmaLineCounters(palettizedImg.hdmaTables.size(), 0);
+	PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
+	for (unsigned int i = 0; i < height; ++i)
+	{
+		for (unsigned int i = 0; i < palettizedImg.hdmaTables.size(); ++i)
+		{
+			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIdx);
+		}
+
+		for (unsigned int j = 0; j < width; ++j, ++snesImgIter, ++palImgIter)
+		{
+			(*snesImgIter) = localPalette[(*palImgIter)];
+		}
+	}
+
+	return snesImgData;
 }
 
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
@@ -516,19 +544,18 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		});
 	}
 
-	// add a fake hdma action to close off the table
-	unsigned int actualHdmaActions = (unsigned int)hdmaActions.size();
-	hdmaActions.push_back({ 224, 0,0 });
-	// we need a base-line entry because we don't start the hdma on scanline 0
-	out.palettizedImg.hdmaTable.push_back({ hdmaActions[0].scanline, 0, 0, {0,0} });
-	for (unsigned int i = 0; i < actualHdmaActions; ++i)
+	unsigned int numHdmaActions = (unsigned int)hdmaActions.size();
+	hdmaActions.push_back({ 224, 0, 0 });
+	out.palettizedImg.hdmaTables.push_back();
 	{
-		const HdmaAction& hdmaAction = hdmaActions[i];
-		HdmaRow hdmaRow;
-		hdmaRow.lineCounter = hdmaActions[i+1].scanline - hdmaAction.scanline;
-		hdmaRow.cgramAddr = hdmaAction.paletteIdx;
-		hdmaRow.cgramData[1] = (unsigned char)((hdmaAction.snesColor & 0x7f00) >> 8);
-		hdmaRow.cgramData[0] = (unsigned char)((hdmaAction.snesColor & 0x00ff) >> 0);
-		out.palettizedImg.hdmaTable.push_back(hdmaRow);
+		out.palettizedImg.hdmaTables[0].push_back({ hdmaActions[0].scanline, 0, 0 });
+		for (unsigned int i = 0; i < numHdmaActions; ++i)
+		{
+			out.palettizedImg.hdmaTables[0].push_back({
+				(unsigned char)(hdmaActions[i + 1].scanline - hdmaActions[i].scanline),
+				hdmaActions[i].paletteIdx,
+				hdmaActions[i].snesColor
+				});
+		}
 	}
 }

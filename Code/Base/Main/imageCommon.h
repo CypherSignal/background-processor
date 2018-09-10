@@ -18,10 +18,9 @@ struct Image
 
 struct HdmaRow
 {
-	unsigned char lineCounter; // should never be > 0x7f - "repeat" functionality in export doesn't exist (yet?).
-	const unsigned char dummy = 0; // dummy byte that should be 0 - not used by hdma because it's delivered alongside cgramAddr
-	unsigned char cgramAddr;
-	unsigned char cgramData[2];
+	unsigned char lineCount; // should never be > 0x7f - "repeat" functionality in export doesn't exist (yet?).
+	unsigned char paletteIdx;
+	unsigned short snesColor;
 };
 
 const unsigned int MaxWidth = 256;
@@ -32,7 +31,7 @@ struct PalettizedImage
 	typedef eastl::fixed_vector<unsigned short, 256, false> PaletteTable;
 	typedef eastl::fixed_vector<HdmaRow, MaxHeight, false> HdmaTable;
 	PaletteTable palette;
-	HdmaTable hdmaTable;
+	eastl::fixed_vector<HdmaTable, 8, false> hdmaTables;
 	eastl::vector<unsigned char> data;
 	unsigned int width, height;
 };
