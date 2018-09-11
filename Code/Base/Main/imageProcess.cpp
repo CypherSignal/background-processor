@@ -110,8 +110,7 @@ struct IndexedImageBucketRange
 	IndexedImageDataIterator end;
 	int deltaColor;
 	int channelDelta;
-	Color midColor;
-	unsigned short snesAvgColor;
+	unsigned char midColor;
 
 	void setBucketRange(IndexedImageDataIterator _begin, IndexedImageDataIterator _end, unsigned int width)
 	{
@@ -124,9 +123,6 @@ struct IndexedImageBucketRange
 		{
 			Color lowestChannels{ 255,255,255 };
 			Color highestChannels{ 0,0,0 };
-			long accumulatedR = 0;
-			long accumulatedG = 0;
-			long accumulatedB = 0;
 			for (auto pxIter = _begin; pxIter != _end; ++pxIter)
 			{
 				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
@@ -135,17 +131,8 @@ struct IndexedImageBucketRange
 				highestChannels.r = max(pxIter->first.r, highestChannels.r);
 				highestChannels.g = max(pxIter->first.g, highestChannels.g);
 				highestChannels.b = max(pxIter->first.b, highestChannels.b);
-				accumulatedR += pxIter->first.r;
-				accumulatedG += pxIter->first.g;
-				accumulatedB += pxIter->first.b;
 				pxOnScanline[pxIter->second / width] = true;
 			}
-
-			size_t bucketSize = distance(begin, end);
-			unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
-			unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
-			unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
-			snesAvgColor = (snesB | snesG | snesR);
 
 			float midR = (highestChannels.r + lowestChannels.r) / 2.0f;
 			int deltaR = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + midR / 256.0f));
@@ -154,22 +141,22 @@ struct IndexedImageBucketRange
 
 			if (deltaR >= deltaG && deltaR >= deltaB)
 			{
+				midColor = (highestChannels.r + lowestChannels.r) / 2;
 				deltaColor = deltaR;
 				channelDelta = 0;
 			}
 			else if (deltaG >= deltaR && deltaG >= deltaB)
 			{
+				midColor = (highestChannels.g + lowestChannels.g) / 2;
 				deltaColor = deltaG;
 				channelDelta = 1;
 			}
 			else
 			{
+				midColor = (highestChannels.b + lowestChannels.b) / 2;
 				deltaColor = deltaB;
 				channelDelta = 2;
 			}
-			midColor.r = (highestChannels.r + lowestChannels.r) / 2;
-			midColor.g = (highestChannels.g + lowestChannels.g) / 2;
-			midColor.b = (highestChannels.b + lowestChannels.b) / 2;
 		}
 
 		{
@@ -203,6 +190,25 @@ struct IndexedImageBucketRange
 			scanlineGapSize = largestRunningGap;
 			scanlineGapEnd = largestRunningGapEnd;
 		}
+	}
+
+	unsigned short getAverageColor()
+	{
+		long accumulatedR = 0;
+		long accumulatedG = 0;
+		long accumulatedB = 0;
+		for (auto pxIter = begin; pxIter != end; ++pxIter)
+		{
+			accumulatedR += pxIter->first.r;
+			accumulatedG += pxIter->first.g;
+			accumulatedB += pxIter->first.b;
+		}
+
+		size_t bucketSize = distance(begin, end);
+		unsigned short snesB = ((unsigned short(accumulatedB / bucketSize) & 0xf8) << 7);
+		unsigned short snesG = ((unsigned short(accumulatedG / bucketSize) & 0xf8) << 2);
+		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
+		return (snesB | snesG | snesR);
 	}
 };
 
@@ -239,19 +245,19 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		case 0:
 			// partition around red
 			medianIter = partition(bucketIter->begin, bucketIter->end, 
-				[medianColor = bucketIter->midColor.r](const pair<Color, unsigned int>& a) 
+				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a) 
 				{ return a.first.r <= medianColor; });
 			break;
 		case 1:
 			// partition around green
 			medianIter = partition(bucketIter->begin, bucketIter->end,
-				[medianColor = bucketIter->midColor.g](const pair<Color, unsigned int>& a)
+				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
 				{ return a.first.g <= medianColor; });
 			break;
 		case 2:
 			// partition around blue
 			medianIter = partition(bucketIter->begin, bucketIter->end,
-				[medianColor = bucketIter->midColor.b](const pair<Color, unsigned int>& a)
+				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
 				{ return a.first.b <= medianColor; });
 			break;
 		};
@@ -271,7 +277,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	for (auto bucket : bucketRanges)
 	{
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(bucket.snesAvgColor);
+		out.palettizedImg.palette.push_back(bucket.getAverageColor());
 		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
 			out.palettizedImg.data[px.second] = paletteIdx;
@@ -371,19 +377,19 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			case 0:
 				// partition around red
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor.r](const pair<Color, unsigned int>& a)
+					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
 				{ return a.first.r <= medianColor; });
 				break;
 			case 1:
 				// partition around green
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor.g](const pair<Color, unsigned int>& a)
+					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
 				{ return a.first.g <= medianColor; });
 				break;
 			case 2:
 				// partition around blue
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor.b](const pair<Color, unsigned int>& a)
+					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
 				{ return a.first.b <= medianColor; });
 				break;
 			};
@@ -524,7 +530,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	{
 		auto bucket = bucketRanges[baseBucketRangeIndex];
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
-		out.palettizedImg.palette.push_back(bucket.snesAvgColor);
+		out.palettizedImg.palette.push_back(bucket.getAverageColor());
 		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
 		{
 			out.palettizedImg.data[px.second] = paletteIdx;
@@ -585,7 +591,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		hdmaAction.scanlineFirst = bucketRanges[hdmaPopulation.first].scanlineLast;
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
 		hdmaAction.paletteIdx = paletteIdx;
-		hdmaAction.snesColor = bucket.snesAvgColor;
+		hdmaAction.snesColor = bucket.getAverageColor();
 		hdmaActions.push_back(hdmaAction);
 		previousScanline = hdmaAction.scanline;
 
