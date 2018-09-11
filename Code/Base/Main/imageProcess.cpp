@@ -397,51 +397,64 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		else if (hdmaBucketRangeIndices.size() < hdmaBucketRangeIndices.capacity())
 		{
 			// find a bucket that WOULD contribute to hdma table and partition about that
+			
 			// first, fill up an array tracking what scanlines are theoretically occupied
 			// (fill it up by going backwards through the hdmaBucketRangeIndices,
 			// and marking what scanline it could be loaded on)
-			eastl::array<bool, MaxHeight> hdmaScanlineInUse;
-			hdmaScanlineInUse.fill(false);
-			auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
-			for (auto hdmaBucketIndexIter = hdmaBucketRangeIndices.rbegin(); hdmaBucketIndexIter != hdmaBucketRangeIndexEnd; ++hdmaBucketIndexIter)
+			// and fill up two arrays that know where, for each element, the next (or previous)
+			// available scanline slot is at
+			eastl::array<unsigned char, MaxHeight+1> nextAvailableHdmaScanline;
+			eastl::array<unsigned char, MaxHeight+1> prevAvailableHdmaScanline;
+
 			{
-				unsigned char scanlineToMark = bucketRanges[*hdmaBucketIndexIter].scanlineFirst;
-				while (scanlineToMark > 0 && hdmaScanlineInUse[scanlineToMark])
-					--scanlineToMark;
-				if (scanlineToMark > 0)
-					hdmaScanlineInUse[scanlineToMark] = true;
-				else // this should never be hit!
-					scanlineToMark = scanlineToMark;
+				eastl::array<bool, MaxHeight+1> hdmaScanlineInUse;
+				hdmaScanlineInUse.fill(false);
+				auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
+				for (auto hdmaBucketIndexIter = hdmaBucketRangeIndices.rbegin(); hdmaBucketIndexIter != hdmaBucketRangeIndexEnd; ++hdmaBucketIndexIter)
+				{
+					unsigned char scanlineToMark = bucketRanges[*hdmaBucketIndexIter].scanlineFirst;
+					while (scanlineToMark > 0 && hdmaScanlineInUse[scanlineToMark])
+						--scanlineToMark;
+					if (scanlineToMark > 0)
+						hdmaScanlineInUse[scanlineToMark] = true;
+					else // this should never be hit!
+						scanlineToMark = scanlineToMark;
+				}
+
+				unsigned char lastAvailableScanline = 0;
+				for (int i = 0; i < hdmaScanlineInUse.size(); ++i)
+				{
+					if (!hdmaScanlineInUse[i])
+					{
+						lastAvailableScanline = (unsigned char)i;
+					}
+					prevAvailableHdmaScanline[i] = lastAvailableScanline;
+				}
+				lastAvailableScanline = MaxHeight+1;
+				for (int i = (int)(hdmaScanlineInUse.size() - 1); i >= 0; --i)
+				{
+					if (!hdmaScanlineInUse[i])
+					{
+						lastAvailableScanline = (unsigned char)i;
+					}
+					nextAvailableHdmaScanline[i] = lastAvailableScanline;
+				}
 			}
 
-			// TODO try and find a _mutual_ split? e.g.:
-			// ----|||-----||||-----
-			// --------|||-----|||
-			// is not splittable right now, but COULD BE
-
-			// this only takes into account bucket pairs that are like
-			// ----|||-----||||----- <- we can split this bucket
-			// --------|||---------
 			auto bucketIter = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
-				[&bucketRanges, &hdmaScanlineInUse]
+				[&bucketRanges, &nextAvailableHdmaScanline, &prevAvailableHdmaScanline]
 				(const IndexedImageBucketRange& bucket)
 				{
 					// find what scanline this bucket could be loaded in on, first
 					auto scanlineGapEnd = bucket.scanlineGapEnd;
-					auto scanlineGapStart = scanlineGapEnd - bucket.scanlineGapSize;
-
-					// advance minScanline forward one-by-one for as long as there's an entry in the hdmaPopulationList 
-					// that is occupied, so that minScanline ends up referring to the first possible scanline
-					// for a color to be loaded on
-					while (scanlineGapStart < scanlineGapEnd && hdmaScanlineInUse[scanlineGapStart])
-						++scanlineGapStart;
+					auto scanlineGapStart = nextAvailableHdmaScanline[scanlineGapEnd - bucket.scanlineGapSize];
 
 					if (scanlineGapStart >= scanlineGapEnd)
 						return false;
 					
 					// find a bucket that we could split against
 					auto evictionCandidate = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
-						[scanlineGapStart, scanlineGapEnd, &bucket, &hdmaScanlineInUse](const IndexedImageBucketRange& hdmaCandidate)
+						[scanlineGapStart, scanlineGapEnd, &nextAvailableHdmaScanline, &prevAvailableHdmaScanline](const IndexedImageBucketRange& hdmaCandidate)
 						{ 
 							// we already would have been evicting/populating between this pair
 							//if (hdmaCandidate.scanlineFirst > bucket.scanlineLast || hdmaCandidate.scanlineLast < bucket.scanlineFirst)
@@ -454,18 +467,10 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 							// on next iteration of building hdma table, we should be able to unload hdmaCandidate,
 							// (or maybe some other bucket will prove to be viable - but we know that ONE is)
 							// and load in the lower-split of bucket
-							auto evictionScanline = hdmaCandidate.scanlineLast;
-							while (evictionScanline < scanlineGapEnd && hdmaScanlineInUse[evictionScanline])
-								++evictionScanline;
-							
-							if (evictionScanline >= scanlineGapEnd)
+							if (nextAvailableHdmaScanline[hdmaCandidate.scanlineLast] >= scanlineGapEnd)
 								return false;
-							
-							auto populationScanline = hdmaCandidate.scanlineFirst;
-							while (populationScanline > scanlineGapStart && hdmaScanlineInUse[populationScanline])
-								--populationScanline;
 
-							if (populationScanline <= scanlineGapStart)
+							if (prevAvailableHdmaScanline[hdmaCandidate.scanlineFirst] <= scanlineGapStart)
 								return false;
 
 							// check if hdmaCandidate's first non-gap sequence (that we can see) is within 
@@ -475,18 +480,10 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 							// on next iteration of building hdma table, we probably won't match a candidate,
 							// but we probably will have things set up so that maybe hdmaCandidate will split
 							// about the split Bucket when we're looking for buckets to split
-							evictionScanline = hdmaCandidate.scanlineGapEnd - hdmaCandidate.scanlineGapSize;
-							while (evictionScanline < scanlineGapEnd && hdmaScanlineInUse[evictionScanline])
-								++evictionScanline;
-
-							if (evictionScanline >= scanlineGapEnd)
+							if (nextAvailableHdmaScanline[hdmaCandidate.scanlineGapEnd - hdmaCandidate.scanlineGapSize] >= scanlineGapEnd)
 								return false;
 
-							populationScanline = hdmaCandidate.scanlineFirst;
-							while (populationScanline > scanlineGapStart && hdmaScanlineInUse[populationScanline])
-								--populationScanline;
-
-							if (populationScanline <= scanlineGapStart)
+							if (prevAvailableHdmaScanline[hdmaCandidate.scanlineFirst] <= scanlineGapStart)
 								return false;
 
 							return true;
