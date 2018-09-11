@@ -178,7 +178,7 @@ struct IndexedImageBucketRange
 			auto scanlineIter = eastl::find(pxOnScanline.begin(), pxOnScanline.end(), true);
 			auto scanlineLastIter = eastl::find(pxOnScanline.rbegin(), pxOnScanline.rend(), true).base();
 			scanlineFirst = (unsigned char)(scanlineIter - pxOnScanline.begin());
-			scanlineLast = (unsigned char)(scanlineLastIter - pxOnScanline.begin());
+			scanlineLast = (unsigned char)(scanlineLastIter - pxOnScanline.begin())-1;
 
 			unsigned char largestRunningGap = 0;
 			unsigned char largestRunningGapEnd = 0;
@@ -403,11 +403,11 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			// and marking what scanline it could be loaded on)
 			// and fill up two arrays that know where, for each element, the next (or previous)
 			// available scanline slot is at
-			eastl::array<unsigned char, MaxHeight+1> nextAvailableHdmaScanline;
-			eastl::array<unsigned char, MaxHeight+1> prevAvailableHdmaScanline;
+			eastl::array<unsigned char, MaxHeight> nextAvailableHdmaScanline;
+			eastl::array<unsigned char, MaxHeight> prevAvailableHdmaScanline;
 
 			{
-				eastl::array<bool, MaxHeight+1> hdmaScanlineInUse;
+				eastl::array<bool, MaxHeight> hdmaScanlineInUse;
 				hdmaScanlineInUse.fill(false);
 				auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
 				for (auto hdmaBucketIndexIter = hdmaBucketRangeIndices.rbegin(); hdmaBucketIndexIter != hdmaBucketRangeIndexEnd; ++hdmaBucketIndexIter)
@@ -430,7 +430,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					}
 					prevAvailableHdmaScanline[i] = lastAvailableScanline;
 				}
-				lastAvailableScanline = MaxHeight+1;
+				lastAvailableScanline = MaxHeight;
 				for (int i = (int)(hdmaScanlineInUse.size() - 1); i >= 0; --i)
 				{
 					if (!hdmaScanlineInUse[i])
@@ -581,7 +581,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 
 		auto bucket = bucketRanges[hdmaPopulation.second];
 		HdmaAction hdmaAction;
-		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline + 1));
+		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline))+1;
 		hdmaAction.scanlineFirst = bucketRanges[hdmaPopulation.first].scanlineLast;
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
 		hdmaAction.paletteIdx = paletteIdx;
