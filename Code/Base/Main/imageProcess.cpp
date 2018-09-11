@@ -5,6 +5,7 @@
 #include <EASTL/sort.h>
 #include <EASTL/utility.h>
 #include <EASTL/array.h>
+#include <EASTL/bonus/tuple_vector.h>
 
 using namespace eastl;
 
@@ -101,7 +102,7 @@ void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 	}
 }
 
-typedef vector<pair<Color, unsigned int>> IndexedImageData;
+typedef tuple_vector<unsigned char, unsigned char, unsigned char, unsigned int> IndexedImageData;
 typedef IndexedImageData::iterator IndexedImageDataIterator;
 struct IndexedImageBucketRange
 {
@@ -125,13 +126,14 @@ struct IndexedImageBucketRange
 			Color highestChannels{ 0,0,0 };
 			for (auto pxIter = _begin; pxIter != _end; ++pxIter)
 			{
-				lowestChannels.r = min(pxIter->first.r, lowestChannels.r);
-				lowestChannels.g = min(pxIter->first.g, lowestChannels.g);
-				lowestChannels.b = min(pxIter->first.b, lowestChannels.b);
-				highestChannels.r = max(pxIter->first.r, highestChannels.r);
-				highestChannels.g = max(pxIter->first.g, highestChannels.g);
-				highestChannels.b = max(pxIter->first.b, highestChannels.b);
-				pxOnScanline[pxIter->second / width] = true;
+				IndexedImageData::const_reference_tuple px = *pxIter;
+				lowestChannels.r = min(get<0>(px), lowestChannels.r);
+				lowestChannels.g = min(get<1>(px), lowestChannels.g);
+				lowestChannels.b = min(get<2>(px), lowestChannels.b);
+				highestChannels.r = max(get<0>(px), highestChannels.r);
+				highestChannels.g = max(get<1>(px), highestChannels.g);
+				highestChannels.b = max(get<2>(px), highestChannels.b);
+				pxOnScanline[get<const unsigned int&>(px) / width] = true;
 			}
 
 			float midR = (highestChannels.r + lowestChannels.r) / 2.0f;
@@ -199,9 +201,9 @@ struct IndexedImageBucketRange
 		long accumulatedB = 0;
 		for (auto pxIter = begin; pxIter != end; ++pxIter)
 		{
-			accumulatedR += pxIter->first.r;
-			accumulatedG += pxIter->first.g;
-			accumulatedB += pxIter->first.b;
+			accumulatedR += get<0>(*pxIter);
+			accumulatedG += get<1>(*pxIter);
+			accumulatedB += get<2>(*pxIter);
 		}
 
 		size_t bucketSize = distance(begin, end);
@@ -221,7 +223,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	unsigned int idx = 0;
 	for (auto px : out.srcImg.data)
 	{
-		indexedImageData.push_back(make_pair(px, idx));
+		indexedImageData.push_back(px.r, px.g, px.b, idx);
 		++idx;
 	}
 
@@ -245,20 +247,20 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 		case 0:
 			// partition around red
 			medianIter = partition(bucketIter->begin, bucketIter->end, 
-				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a) 
-				{ return a.first.r <= medianColor; });
+				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a) 
+				{ return get<0>(a) <= medianColor; });
 			break;
 		case 1:
 			// partition around green
 			medianIter = partition(bucketIter->begin, bucketIter->end,
-				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
-				{ return a.first.g <= medianColor; });
+				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
+				{ return  get<1>(a) <= medianColor; });
 			break;
 		case 2:
 			// partition around blue
 			medianIter = partition(bucketIter->begin, bucketIter->end,
-				[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
-				{ return a.first.b <= medianColor; });
+				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
+				{ return  get<2>(a) <= medianColor; });
 			break;
 		};
 
@@ -278,9 +280,9 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	{
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
 		out.palettizedImg.palette.push_back(bucket.getAverageColor());
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
 		{
-			out.palettizedImg.data[px.second] = paletteIdx;
+			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
 		});
 	}
 }
@@ -294,7 +296,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	unsigned int idx = 0;
 	for (auto px : out.srcImg.data)
 	{
-		indexedImageData.push_back(make_pair(px, idx));
+		indexedImageData.push_back(px.r, px.g, px.b, idx);
 		++idx;
 	}
 
@@ -377,20 +379,20 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			case 0:
 				// partition around red
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
-				{ return a.first.r <= medianColor; });
+					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
+				{ return get<0>(a) <= medianColor; });
 				break;
 			case 1:
 				// partition around green
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
-				{ return a.first.g <= medianColor; });
+					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
+				{ return get<1>(a) <= medianColor; });
 				break;
 			case 2:
 				// partition around blue
 				medianIter = partition(bucketIter->begin, bucketIter->end,
-					[medianColor = bucketIter->midColor](const pair<Color, unsigned int>& a)
-				{ return a.first.b <= medianColor; });
+					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
+				{ return get<2>(a) <= medianColor; });
 				break;
 			};
 
@@ -505,8 +507,8 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			// partition bucket about scanline and continue
 			//IndexedImageBucketRange& bucketToSplit = bucketRanges[*bucketIter];
 			auto medianIter = partition(bucketIter->begin, bucketIter->end,
-				[scanlineSplit = bucketIter->scanlineGapEnd, width = out.srcImg.width](const pair<Color, unsigned int>& a)
-				{ return a.second / width < scanlineSplit; });
+				[scanlineSplit = bucketIter->scanlineGapEnd, width = out.srcImg.width](IndexedImageData::const_reference_tuple a)
+				{ return get<const unsigned int&>(a) / width < scanlineSplit; });
 			IndexedImageBucketRange& newRange = bucketRanges.push_back();
 			newRange.setBucketRange(medianIter, bucketIter->end, out.srcImg.width);
 			bucketIter->setBucketRange(bucketIter->begin, medianIter, out.srcImg.width);
@@ -531,9 +533,9 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		auto bucket = bucketRanges[baseBucketRangeIndex];
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
 		out.palettizedImg.palette.push_back(bucket.getAverageColor());
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
 		{
-			out.palettizedImg.data[px.second] = paletteIdx;
+			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
 		});
 	}
 
@@ -595,9 +597,9 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		hdmaActions.push_back(hdmaAction);
 		previousScanline = hdmaAction.scanline;
 
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](const pair<Color, unsigned int>& px)
+		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
 		{
-			out.palettizedImg.data[px.second] = paletteIdx;
+			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
 		});
 	}
 
