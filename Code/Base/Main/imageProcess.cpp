@@ -395,9 +395,10 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		// if we can still fill up the hdma list, split on scanline gap
 		else if (hdmaBucketRangeIndices.size() < hdmaBucketRangeIndices.capacity())
 		{
-			//	find a bucket that WOULD contribute to hdma table and partition about that
-			//	"Would contribute" means that the "scanlineGapEnd" matches with something else from the list of bucket ranges,
-			//			while still not colliding with other hdma actions
+			// find a bucket that WOULD contribute to hdma table and partition about that
+			// first, fill up an array tracking what scanlines are theoretically occupied
+			// (fill it up by going backwards through the hdmaBucketRangeIndices,
+			// and marking what scanline it could be loaded on)
 			eastl::array<bool, MaxHeight> hdmaScanlineInUse;
 			hdmaScanlineInUse.fill(false);
 			auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
@@ -412,6 +413,14 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					scanlineToMark = scanlineToMark;
 			}
 
+			// TODO try and find a _mutual_ split? e.g.:
+			// ----|||-----||||-----
+			// --------|||-----|||
+			// is not splittable right now, but COULD BE
+
+			// this only takes into account bucket pairs that are like
+			// ----|||-----||||----- <- we can split this bucket
+			// --------|||---------
 			auto bucketIter = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
 				[&bucketRanges, &hdmaScanlineInUse]
 				(const IndexedImageBucketRange& bucket)
@@ -421,25 +430,33 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					auto minScanline = maxScanline - bucket.scanlineGapSize;
 
 					// advance minScanline forward one-by-one for as long as there's an entry in the hdmaPopulationList 
-					// that refers to a bucketRange with a matching scanlineLast, so that minScanline ends up 
-					// referring to the first possible scanline for an eviction to occur on
-					while (hdmaScanlineInUse[minScanline])
+					// that is occupied, so that minScanline ends up referring to the first possible scanline
+					// for a color to be loaded on
+					while (minScanline < hdmaScanlineInUse.size() && hdmaScanlineInUse[minScanline])
 						++minScanline;
 
 					if (minScanline >= maxScanline)
 						return false;
-
+					
+					// find a bucket that we could split against
 					auto evictionCandidate = eastl::find_if(bucketRanges.begin(), bucketRanges.end(),
-						[minScanline, &hdmaScanlineInUse](const IndexedImageBucketRange& bucket)
+						[minScanline, maxScanline, &hdmaScanlineInUse](const IndexedImageBucketRange& hdmaCandidate)
 						{ 
-							auto evictionScanline = bucket.scanlineLast;
-							while (evictionScanline < minScanline && hdmaScanlineInUse[evictionScanline])
-								++evictionScanline;
-							return evictionScanline < minScanline; 
+							// check if hdmaCandidate's final scanline is before our first possible scanline
+							// this only takes into account bucket pairs that are like so:
+							// -|||-------|||----- <- Bucket - split this along the scanline
+							// ------|||---------- <- hdmaCandidate?
+							// on next iteration of building hdma table, we should be able to unload hdmaCandidate,
+							// (or maybe some other bucket will prove to be viable - but we know that ONE is)
+							// and load in the lower-split of bucket
+							auto evictionScanline = hdmaCandidate.scanlineFirst;
+							while (evictionScanline > minScanline && hdmaScanlineInUse[evictionScanline])
+								--evictionScanline;
+							return evictionScanline > minScanline;
 						});
-
+					
 					return evictionCandidate != bucketRanges.end();
-				});
+			});
 	
 			// if a bucket could not positively contribute, then break
 			if (bucketIter == bucketRanges.end())
