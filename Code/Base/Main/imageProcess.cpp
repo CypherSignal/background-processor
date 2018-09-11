@@ -1,6 +1,7 @@
 #include "Pch.h"
 
 #include "imageprocess.h"
+#include "imageProcessIspc_ispc.h"
 
 #include <EASTL/sort.h>
 #include <EASTL/utility.h>
@@ -124,17 +125,12 @@ struct IndexedImageBucketRange
 		{
 			Color lowestChannels{ 255,255,255 };
 			Color highestChannels{ 0,0,0 };
-			for (auto pxIter = _begin; pxIter != _end; ++pxIter)
-			{
-				IndexedImageData::const_reference_tuple px = *pxIter;
-				lowestChannels.r = min(get<0>(px), lowestChannels.r);
-				lowestChannels.g = min(get<1>(px), lowestChannels.g);
-				lowestChannels.b = min(get<2>(px), lowestChannels.b);
-				highestChannels.r = max(get<0>(px), highestChannels.r);
-				highestChannels.g = max(get<1>(px), highestChannels.g);
-				highestChannels.b = max(get<2>(px), highestChannels.b);
-				pxOnScanline[get<const unsigned int&>(px) / width] = true;
-			}
+
+			int pxCount = (int)distance(_begin, _end);
+			ispc::minmaxUint8(&get<0>(*_begin), pxCount, lowestChannels.r, highestChannels.r);
+			ispc::minmaxUint8(&get<1>(*_begin), pxCount, lowestChannels.g, highestChannels.g);
+			ispc::minmaxUint8(&get<2>(*_begin), pxCount, lowestChannels.b, highestChannels.b);
+			ispc::markScanlines(&get<unsigned int&>(*_begin), pxCount, (int8_t*)pxOnScanline.data(), width, scanlineFirst, scanlineLast);
 
 			float midR = (highestChannels.r + lowestChannels.r) / 2.0f;
 			int deltaR = (unsigned int)sqrt(pow(highestChannels.r - lowestChannels.r, 2.0f) * (2.0f + midR / 256.0f));
@@ -162,16 +158,11 @@ struct IndexedImageBucketRange
 		}
 
 		{
-			// determine the first and last scanline a pixel in this bucket appears in, and what the widest gap 
-			// between scanlines is
-			auto scanlineIter = eastl::find(pxOnScanline.begin(), pxOnScanline.end(), true);
-			auto scanlineLastIter = eastl::find(pxOnScanline.rbegin(), pxOnScanline.rend(), true).base();
-			scanlineFirst = (unsigned char)(scanlineIter - pxOnScanline.begin());
-			scanlineLast = (unsigned char)(scanlineLastIter - pxOnScanline.begin())-1;
-
+			// determine what the widest gap between the scanlines is
 			unsigned char largestRunningGap = 0;
 			unsigned char largestRunningGapEnd = 0;
 			unsigned char runningGap = 0;
+
 			for (unsigned char i = scanlineFirst; i != scanlineLast; ++i)
 			{
 				if (pxOnScanline[i])
