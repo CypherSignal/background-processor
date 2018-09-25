@@ -8,12 +8,15 @@ struct ProcessImageParams
 	// if true, then the output image will be processed so that each tile addresses a 16c palette (i.e. 4bpp tilemap data)
 	// if false, the output image will map a single pallette all on its own (i.e. 8bpp tilemap data)
 	bool lowBitDepthPalette;
-	bool generateHdmaData;
 
 	// only acknowledged if lowBitDepthPalette is true - the maximum number of 16c palettes that will be generated
 	int maxPalettes;
 	// only acknowledged if lowBitDepthPalette is false - the maximum number of colors that will be generated across
 	int maxColors;
+
+	// the total number of hdmaChannels that will be utilized in the output
+	int maxHdmaChannels;
+
 
 	std::filesystem::path inFilePath;
 	std::filesystem::path outDirPath;

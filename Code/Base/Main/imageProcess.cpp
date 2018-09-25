@@ -39,14 +39,14 @@ Image getDepalettizedImage(const PalettizedImage& palettizedImg)
 	auto palImgIter = palettizedImg.data.begin();
 	auto newImgIter = newImg.data.begin();
 
-	unsigned int hdmaRowIdx = 0;
+	eastl::fixed_vector<unsigned int, 8, false> hdmaRowIndices(palettizedImg.hdmaTables.size(), 0);
 	eastl::fixed_vector<unsigned char, 8, false> hdmaLineCounters(palettizedImg.hdmaTables.size(), 0);
 	PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
 	for (unsigned int i = 0; i < newImg.height; ++i)
 	{
 		for (unsigned int i = 0; i < palettizedImg.hdmaTables.size(); ++i)
 		{
-			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIdx);
+			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIndices[i]);
 		}
 
 		for (unsigned int j = 0; j < newImg.width; ++j, ++newImgIter, ++palImgIter)
@@ -72,14 +72,14 @@ eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& pa
 	auto palImgIter = palettizedImg.data.begin();
 	auto snesImgIter = snesImgData.begin();
 
-	unsigned int hdmaRowIdx = 0;
+	eastl::fixed_vector<unsigned int, 8, false> hdmaRowIndices(palettizedImg.hdmaTables.size(), 0);
 	eastl::fixed_vector<unsigned char, 8, false> hdmaLineCounters(palettizedImg.hdmaTables.size(), 0);
 	PalettizedImage::PaletteTable localPalette = palettizedImg.palette;
 	for (unsigned int i = 0; i < height; ++i)
 	{
 		for (unsigned int i = 0; i < palettizedImg.hdmaTables.size(); ++i)
 		{
-			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIdx);
+			updateHdmaAndPalette(palettizedImg.hdmaTables[i], localPalette, hdmaLineCounters[i], hdmaRowIndices[i]);
 		}
 
 		for (unsigned int j = 0; j < width; ++j, ++snesImgIter, ++palImgIter)
@@ -93,7 +93,7 @@ eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& pa
 
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 {
-	if (params.generateHdmaData)
+	if (params.maxHdmaChannels > 0)
 	{
 		quantizeToSinglePaletteWithHdma(params, out);
 	}
@@ -219,15 +219,15 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	}
 
 	vector<IndexedImageBucketRange> bucketRanges;
-	auto colorsToFind = min(params.maxColors - 1, 255); // we only support 256 colors, minus 1 for the 0th color
-	bucketRanges.reserve(colorsToFind);
+	const auto ColorsToFind = min(params.maxColors - 1, 255); // we only support 256 colors, minus 1 for the 0th color
+	bucketRanges.reserve(ColorsToFind);
 	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
 	// bucket all of the colors by finding which bucket has the greatest delta across each channel,
 	// and split the bucket about the median color of each bucket
 	// in the end, bucketRanges should have colorsToFind number of buckets, and each should be a unique range
-	while (bucketRanges.size() < colorsToFind)
+	while (bucketRanges.size() < ColorsToFind)
 	{
 		auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
 			[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.deltaColor < b.deltaColor; });
@@ -291,20 +291,23 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		++idx;
 	}
 
+	const auto ParamMaxHdmaChannels = params.maxHdmaChannels;
+
 	const int MaxColors = 255;
-	fixed_vector<IndexedImageBucketRange, MaxColors + MaxHeight, false> bucketRanges; // max possible buckets is 255 colors + 224 scanlines of hdma data
-	auto colorsToFind = min(params.maxColors, MaxColors)-1; // we only support 256 colors, minus 1 for the 0th color
+	fixed_vector<IndexedImageBucketRange, MaxColors + MaxHeight * MaxHdmaChannels, false> bucketRanges; // max possible buckets is 255 colors + 224 * 8 scanlines of hdma data
+	const auto ColorsToFind = min(params.maxColors, MaxColors)-1; // we only support 256 colors, minus 1 for the 0th color
 	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
-	fixed_vector<unsigned int, MaxColors + MaxHeight, false> baseBucketRangeIndices;
-	fixed_vector<unsigned int, MaxColors + MaxHeight, false> availableHdmaIndices;
+	fixed_vector<unsigned int, MaxColors + MaxHeight * MaxHdmaChannels, false> baseBucketRangeIndices;
+	fixed_vector<unsigned int, MaxColors + MaxHeight * MaxHdmaChannels, false> availableHdmaIndices;
 	fixed_vector<unsigned int, MaxColors, false> paletteBucketRangeIndices;
-	fixed_vector<unsigned int, MaxHeight, false> hdmaBucketRangeIndices;
+	fixed_vector<unsigned int, MaxHeight * MaxHdmaChannels, false> hdmaBucketRangeIndices;
 	
 	// first element is what bucket got evicted; second element is what bucket is populating the eviction
-	fixed_vector<pair<unsigned int, unsigned int>, MaxHeight-1, false> hdmaPopulationList; 
+	fixed_vector<pair<unsigned int, unsigned int>, (MaxHeight-1) * MaxHdmaChannels, false> hdmaPopulationList; 
 	
+
 	while (true)
 	{
 		// reset the list of baseBucketRangeIndices and hdmaBucketRangeIndices
@@ -312,28 +315,33 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		paletteBucketRangeIndices.clear();
 		hdmaBucketRangeIndices.clear();
 		hdmaPopulationList.clear();
-		if (bucketRanges.size() >= colorsToFind)
+		if (bucketRanges.size() >= ColorsToFind)
 		{
 			// with current set of bucketRanges, generate current hdma table
-			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
 
+			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
 			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
 			eastl::sort(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(),
 				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineFirst > bucketRanges[b].scanlineFirst; });
 			availableHdmaIndices = baseBucketRangeIndices;
 			// advance through the list of bucket ranges, finding candidates that can evict a color
 			unsigned char minScanline = MaxHeight;
+			unsigned char actionsOnScanline = 0;
 			for (auto bucketIndex : baseBucketRangeIndices)
 			{
-				minScanline = min(bucketRanges[bucketIndex].scanlineFirst, minScanline);
-				
+				// if we are about to apply a whole new minScanline, then move it and reset the actionsOnScanline back to zero
+				if (bucketRanges[bucketIndex].scanlineFirst < minScanline)
+				{
+					minScanline = bucketRanges[bucketIndex].scanlineFirst;
+					actionsOnScanline = 0;
+				}
 				// find the bucket range with the greatest last-scanline that is < our minimum scanline target
 				auto hdmaBucketRangeIter = eastl::max_element(
 					eastl::find_if(availableHdmaIndices.begin(), availableHdmaIndices.end(),
-						[minScanline, &bucketRanges] (unsigned int a) { return bucketRanges[a].scanlineLast < minScanline; }),
+						[minScanline, &bucketRanges](unsigned int a) { return bucketRanges[a].scanlineLast < minScanline; }),
 					availableHdmaIndices.end(),
-					[minScanline, &bucketRanges] (unsigned int a, unsigned int b)
-						{ return  bucketRanges[b].scanlineLast < minScanline && bucketRanges[b].scanlineLast > bucketRanges[a].scanlineLast; });
+					[minScanline, &bucketRanges](unsigned int a, unsigned int b)
+				{ return  bucketRanges[b].scanlineLast < minScanline && bucketRanges[b].scanlineLast > bucketRanges[a].scanlineLast; });
 
 				// if we could not find a candidate that we could replace, then we're a palette-bucket
 				if (hdmaBucketRangeIter == availableHdmaIndices.end())
@@ -349,20 +357,29 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					hdmaPopulationList.push_back(make_pair(hdmaBucketIndex, bucketIndex));
 					availableHdmaIndices.erase(eastl::remove(availableHdmaIndices.begin(), availableHdmaIndices.end(), hdmaBucketIndex), availableHdmaIndices.end());
 				}
-				if (minScanline > 0)
+			
+				// mark the number of actions performed on our current minScanline
+				// if we hit the limit, then move the minScanline back one
+				++actionsOnScanline;
+				if (actionsOnScanline == ParamMaxHdmaChannels && minScanline > 0)
 				{
+					actionsOnScanline = 0;
 					--minScanline;
 				}
 			}
 		}
 
 		// we can still split on colors
-		if (paletteBucketRangeIndices.size() < colorsToFind)
+		if (paletteBucketRangeIndices.size() < ColorsToFind)
 		{
 			// first bucket all of the colors by finding which bucket has the greatest delta across each channel,
 			// and split the bucket about the median color of each bucket
 			auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
 				[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.deltaColor < b.deltaColor; });
+
+			// if the bucket with the biggest deltaColor was 0, we must have perfectly bucketed everything, so we're done
+			if (bucketIter->deltaColor == 0)
+				break;
 
 			IndexedImageDataIterator medianIter;
 			switch (bucketIter->channelDelta)
@@ -397,7 +414,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		{
 			// find a bucket that WOULD contribute to hdma table and partition about that
 			
-			// first, fill up an array tracking what scanlines are theoretically occupied
+			// first, fill up an array tracking how the scanlines are occupied
 			// (fill it up by going backwards through the hdmaBucketRangeIndices,
 			// and marking what scanline it could be loaded on)
 			// and fill up two arrays that know where, for each element, the next (or previous)
@@ -406,33 +423,34 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			eastl::array<unsigned char, MaxHeight> prevAvailableHdmaScanline;
 
 			{
-				eastl::array<bool, MaxHeight> hdmaScanlineInUse;
-				hdmaScanlineInUse.fill(false);
+				eastl::array<unsigned char, MaxHeight> numHdmaScanlineActions;
+				numHdmaScanlineActions.fill(0);
 				auto hdmaBucketRangeIndexEnd = hdmaBucketRangeIndices.rend();
 				for (auto hdmaBucketIndexIter = hdmaBucketRangeIndices.rbegin(); hdmaBucketIndexIter != hdmaBucketRangeIndexEnd; ++hdmaBucketIndexIter)
 				{
 					unsigned char scanlineToMark = bucketRanges[*hdmaBucketIndexIter].scanlineFirst;
-					while (scanlineToMark > 0 && hdmaScanlineInUse[scanlineToMark])
+					while (scanlineToMark > 0 && numHdmaScanlineActions[scanlineToMark] >= ParamMaxHdmaChannels)
 						--scanlineToMark;
 					if (scanlineToMark > 0)
-						hdmaScanlineInUse[scanlineToMark] = true;
+						++numHdmaScanlineActions[scanlineToMark];
 					else // this should never be hit!
 						scanlineToMark = scanlineToMark;
 				}
 
 				unsigned char lastAvailableScanline = 0;
-				for (int i = 0; i < hdmaScanlineInUse.size(); ++i)
+				for (int i = 0; i < numHdmaScanlineActions.size(); ++i)
 				{
-					if (!hdmaScanlineInUse[i])
+					if (numHdmaScanlineActions[i] < ParamMaxHdmaChannels)
 					{
 						lastAvailableScanline = (unsigned char)i;
 					}
 					prevAvailableHdmaScanline[i] = lastAvailableScanline;
 				}
+
 				lastAvailableScanline = MaxHeight;
-				for (int i = (int)(hdmaScanlineInUse.size() - 1); i >= 0; --i)
+				for (int i = (int)(numHdmaScanlineActions.size() - 1); i >= 0; --i)
 				{
-					if (!hdmaScanlineInUse[i])
+					if (numHdmaScanlineActions[i] < ParamMaxHdmaChannels)
 					{
 						lastAvailableScanline = (unsigned char)i;
 					}
@@ -511,7 +529,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		}
 	}
 
-	// now that the colors have been bucketed, calculate the avg color of each bucket to determine the image's palette 
+	// now that the colors have been bucketed, write out the final results
 	out.palettizedImg.width = out.srcImg.width;
 	out.palettizedImg.height = out.srcImg.height;
 	out.palettizedImg.data.resize(out.srcImg.data.size());
@@ -541,8 +559,9 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		unsigned char paletteIdx;
 		unsigned short snesColor;
 	};
-	fixed_vector<HdmaAction, MaxHeight, false> hdmaActions;
+	fixed_vector<fixed_vector<HdmaAction, MaxHeight, false>, MaxHdmaChannels, false> hdmaActions(params.maxHdmaChannels);
 	unsigned char previousScanline = 0;
+	unsigned char actionsOnScanline = 0;
 	eastl::sort(hdmaPopulationList.begin(), hdmaPopulationList.end(), [&bucketRanges](const pair<unsigned int, unsigned int>& a, const pair<unsigned int, unsigned int>& b)
 	{
 		if (bucketRanges[a.first].scanlineLast < bucketRanges[b.first].scanlineLast) return true;
@@ -553,6 +572,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	for (auto hdmaPopulationIter = hdmaPopulationList.begin(); hdmaPopulationIter != hdmaPopulationList.end(); ++hdmaPopulationIter)
 	{
 		auto hdmaPopulation = *hdmaPopulationIter;
+
 		// find what paletteIdx this hdma action should occur in
 		unsigned char paletteIdx;
 		{
@@ -580,13 +600,25 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 
 		auto bucket = bucketRanges[hdmaPopulation.second];
 		HdmaAction hdmaAction;
-		hdmaAction.scanline = max(bucketRanges[hdmaPopulation.first].scanlineLast, (unsigned char)(previousScanline))+1;
+		if (bucketRanges[hdmaPopulation.first].scanlineLast > previousScanline)
+		{
+			previousScanline = bucketRanges[hdmaPopulation.first].scanlineLast;
+			actionsOnScanline = 0;
+		}
+
+		hdmaAction.scanline = (unsigned char)(previousScanline);
 		hdmaAction.scanlineFirst = bucketRanges[hdmaPopulation.first].scanlineLast;
 		hdmaAction.scanlineRequired = bucketRanges[hdmaPopulation.second].scanlineFirst;
 		hdmaAction.paletteIdx = paletteIdx;
 		hdmaAction.snesColor = bucket.getAverageColor();
-		hdmaActions.push_back(hdmaAction);
-		previousScanline = hdmaAction.scanline;
+		hdmaActions[actionsOnScanline].push_back(hdmaAction);
+
+		++actionsOnScanline;
+		if (actionsOnScanline == ParamMaxHdmaChannels)
+		{
+			actionsOnScanline = 0;
+			++previousScanline;
+		}
 
 		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
 		{
@@ -594,17 +626,18 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		});
 	}
 
-	unsigned int numHdmaActions = (unsigned int)hdmaActions.size();
-	hdmaActions.push_back({ 224, 0, 0 });
-	out.palettizedImg.hdmaTables.push_back();
+	for (auto& hdmaActionColumn : hdmaActions)
 	{
-		out.palettizedImg.hdmaTables[0].push_back({ hdmaActions[0].scanline, 0, 0 });
+		unsigned int numHdmaActions = (unsigned int)hdmaActionColumn.size();
+		hdmaActionColumn.push_back({ 224, 0, 0 });
+		auto& newHdmaTable = out.palettizedImg.hdmaTables.push_back();
+		newHdmaTable.push_back({ (unsigned char)(hdmaActionColumn[0].scanline + 1), 0, 0 });
 		for (unsigned int i = 0; i < numHdmaActions; ++i)
 		{
-			out.palettizedImg.hdmaTables[0].push_back({
-				(unsigned char)(hdmaActions[i + 1].scanline - hdmaActions[i].scanline),
-				hdmaActions[i].paletteIdx,
-				hdmaActions[i].snesColor
+			newHdmaTable.push_back({
+				(unsigned char)(hdmaActionColumn[i + 1].scanline - hdmaActionColumn[i].scanline),
+				hdmaActionColumn[i].paletteIdx,
+				hdmaActionColumn[i].snesColor
 				});
 		}
 	}

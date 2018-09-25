@@ -99,7 +99,7 @@ int main(int argc, char** argv)
 
 	ProcessImageParams params;
 	params.lowBitDepthPalette = false;
-	params.generateHdmaData = true;
+	params.maxHdmaChannels = 8;
 	params.maxColors = 256;
 	params.outDirPath = outDirPath;
 	if (std::filesystem::is_regular_file(inFilePath))
