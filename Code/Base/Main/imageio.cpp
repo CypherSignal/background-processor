@@ -200,7 +200,6 @@ void saveSnesHdmaTable(const PalettizedImage& img, const std::filesystem::path &
 		const auto& hdmaActions = img.hdmaTables[i];
 		for (const auto& hdmaAction : hdmaActions)
 		{
-			const auto& hdmaAction = hdmaActions[i];
 			HdmaRow hdmaRow;
 			hdmaRow.lineCounter = hdmaAction.lineCount;
 			hdmaRow.cgramAddr = hdmaAction.paletteIdx;
