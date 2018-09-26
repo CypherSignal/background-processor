@@ -24,6 +24,7 @@ struct ProcessImageParams
 
 Image getDepalettizedImage(const PalettizedImage& palettizedImg);
 eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& palettizedImg);
+Image getQuantizedImage(const Image& srcImg);
 
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out);
 

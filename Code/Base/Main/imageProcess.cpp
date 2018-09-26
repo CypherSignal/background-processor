@@ -91,6 +91,25 @@ eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& pa
 	return snesImgData;
 }
 
+
+Image getQuantizedImage(const Image& srcImg)
+{
+	Image newImg;
+	newImg.width = srcImg.width;
+	newImg.height = srcImg.height;
+	newImg.data.resize(srcImg.data.size());
+	auto newImgIter = newImg.data.begin();
+	for (auto color : srcImg.data)
+	{
+		color.r &= 0xf8;
+		color.g &= 0xf8;
+		color.b &= 0xf8;
+		(*newImgIter) = color;
+		++newImgIter;
+	}
+	return newImg;
+}
+
 void processImage(const ProcessImageParams& params, ProcessImageStorage& out)
 {
 	if (params.maxHdmaChannels > 0)

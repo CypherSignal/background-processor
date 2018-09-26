@@ -24,6 +24,13 @@ void processFile(const ProcessImageParams &params)
 	processImage(params, storage);
 		
 	Concurrency::parallel_invoke(
+		// write out 15b quantized source
+		[&params, &storage]
+		{
+			std::filesystem::path outPngPath = params.outDirPath / params.inFilePath.stem().concat("-src.png");
+			saveImage(getQuantizedImage(storage.srcImg), outPngPath);
+		},
+
 		// write out raw as png
 		[&params, &storage]
 		{
