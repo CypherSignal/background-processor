@@ -313,15 +313,18 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	const auto ParamMaxHdmaChannels = params.maxHdmaChannels;
 
 	const int MaxColors = 255;
-	fixed_vector<IndexedImageBucketRange, MaxColors + MaxHeight * MaxHdmaChannels, false> bucketRanges; // max possible buckets is 255 colors + 224 * 8 scanlines of hdma data
+	const int MaxHdmaBuckets = 1150; // need to limit this because for full-res images that max out the HDMA traffic, more than 64KB of data will be generated. With some compression this can probably drop down to "MaxScanlines * MaxHdmaBuckets"
+	const int MaxBuckets = MaxColors + MaxHdmaBuckets;
+
+	fixed_vector<IndexedImageBucketRange, MaxBuckets, false> bucketRanges; // max possible buckets is 255 colors + 224 * 8 scanlines of hdma data
 	const auto ColorsToFind = min(params.maxColors, MaxColors)-1; // we only support 256 colors, minus 1 for the 0th color
 	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
-	fixed_vector<unsigned int, MaxColors + MaxHeight * MaxHdmaChannels, false> baseBucketRangeIndices;
-	fixed_vector<unsigned int, MaxColors + MaxHeight * MaxHdmaChannels, false> availableHdmaIndices;
+	fixed_vector<unsigned int, MaxBuckets, false> baseBucketRangeIndices;
+	fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices;
 	fixed_vector<unsigned int, MaxColors, false> paletteBucketRangeIndices;
-	fixed_vector<unsigned int, MaxHeight * MaxHdmaChannels, false> hdmaBucketRangeIndices;
+	fixed_vector<unsigned int, MaxHdmaBuckets, false> hdmaBucketRangeIndices;
 	
 	// first element is what bucket got evicted; second element is what bucket is populating the eviction
 	fixed_vector<pair<unsigned int, unsigned int>, (MaxHeight-1) * MaxHdmaChannels, false> hdmaPopulationList; 
@@ -365,7 +368,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 				{ return  bucketRanges[b].scanlineLast < minScanline && bucketRanges[b].scanlineLast > bucketRanges[a].scanlineLast; });
 
 				// if we could not find a candidate that we could replace, then we're a palette-bucket
-				if (hdmaBucketRangeIter == availableHdmaIndices.end())
+				if (hdmaBucketRangeIter == availableHdmaIndices.end() || hdmaBucketRangeIndices.size() == hdmaBucketRangeIndices.capacity())
 				{
 					paletteBucketRangeIndices.push_back(bucketIndex);
 				}
