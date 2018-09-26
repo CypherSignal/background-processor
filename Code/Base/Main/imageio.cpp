@@ -1,5 +1,8 @@
 #include "Pch.h"
 
+#include <Main/imageprocess.h>
+#include <External/EASTL/include/EASTL/set.h>
+
 #include "imageio.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -210,4 +213,56 @@ void saveSnesHdmaTable(const PalettizedImage& img, const std::filesystem::path &
 
 		writeToFile(hdmaOutput.data(), hdmaOutput.size(), localPath);
 	}
+}
+
+void saveImageStatistics(const ProcessImageStorage& storage, const std::filesystem::path &file)
+{
+	double psnr = 0;
+	{
+		// calculate PSNR
+		auto outputData = getDepalettizedSnesImage(storage.palettizedImg);
+
+		double totalError = 0;
+		unsigned int numPx = (unsigned int)outputData.size();
+		for (unsigned int idx = 0; idx < numPx; ++idx)
+		{
+			Color origColor = storage.srcImg.data[idx];
+			unsigned short newColor = outputData[idx];
+			int deltaR = ((origColor.r & 0xf8) >> 3) - ((newColor & 0x001f) >> 0);
+			int deltaG = ((origColor.g & 0xf8) >> 3) - ((newColor & 0x03e0) >> 5);
+			int deltaB = ((origColor.b & 0xf8) >> 3) - ((newColor & 0x7c00) >> 10);
+
+			totalError += (deltaR * deltaR) + (deltaG * deltaG) + (deltaB * deltaB);
+		}
+		totalError /= (numPx * 3);
+		
+		double maxError = (1 << 5) - 1;
+
+		psnr = totalError > 0 ? 20 * log10(maxError) - 10 * log10(totalError) : 0.0;
+	}
+
+	unsigned int numColors = 0;
+	{
+		// calculate total # of colors in img, across palette and all hdma actions
+		eastl::set<unsigned short> colorSet;
+
+		for (const auto& plt : storage.palettizedImg.palette)
+		{
+			colorSet.insert(plt);
+		}
+
+		for (const auto& hdmaTable : storage.palettizedImg.hdmaTables)
+		{
+			for (const auto& hdmaAction : hdmaTable)
+			{
+				colorSet.insert(hdmaAction.snesColor);
+			}
+		}
+		numColors = (unsigned int)colorSet.size();
+	}
+
+	char output[512];
+	snprintf(output, 512, "PSNR: %f dB\r\nNumColors: %d\r\n", psnr, numColors);
+	
+	writeToFile(output, strlen(output), file);
 }

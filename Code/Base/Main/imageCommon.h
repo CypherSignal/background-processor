@@ -35,3 +35,9 @@ struct PalettizedImage
 	eastl::vector<unsigned char> data;
 	unsigned int width, height;
 };
+
+struct ProcessImageStorage
+{
+	Image srcImg;
+	PalettizedImage palettizedImg;
+};

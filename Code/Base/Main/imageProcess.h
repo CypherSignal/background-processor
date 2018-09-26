@@ -22,12 +22,6 @@ struct ProcessImageParams
 	std::filesystem::path outDirPath;
 };
 
-struct ProcessImageStorage
-{
-	Image srcImg;
-	PalettizedImage palettizedImg;
-};
-
 Image getDepalettizedImage(const PalettizedImage& palettizedImg);
 eastl::vector<unsigned short> getDepalettizedSnesImage(const PalettizedImage& palettizedImg);
 

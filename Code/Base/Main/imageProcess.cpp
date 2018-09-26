@@ -327,6 +327,8 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			// advance through the list of bucket ranges, finding candidates that can evict a color
 			unsigned char minScanline = MaxHeight;
 			unsigned char actionsOnScanline = 0;
+			// TODO before any further work can or should be pursued, this loop MUST be optimized. In particular, the "max_element/find_if" combo, and "erase".
+			// this currently takes 85% of all processing time on high-color-high-hdma images
 			for (auto bucketIndex : baseBucketRangeIndices)
 			{
 				// if we are about to apply a whole new minScanline, then move it and reset the actionsOnScanline back to zero
