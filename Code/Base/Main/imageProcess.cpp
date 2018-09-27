@@ -321,19 +321,15 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	IndexedImageBucketRange& newRange = bucketRanges.push_back();
 	newRange.setBucketRange(indexedImageData.begin(), indexedImageData.end(), out.srcImg.width);
 
-	fixed_vector<unsigned int, MaxBuckets, false> baseBucketRangeIndices;
-	fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices;
 	fixed_vector<unsigned int, MaxColors, false> paletteBucketRangeIndices;
 	fixed_vector<unsigned int, MaxHdmaBuckets, false> hdmaBucketRangeIndices;
 	
 	// first element is what bucket got evicted; second element is what bucket is populating the eviction
 	fixed_vector<pair<unsigned int, unsigned int>, (MaxHeight-1) * MaxHdmaChannels, false> hdmaPopulationList; 
 	
-
 	while (true)
 	{
 		// reset the list of baseBucketRangeIndices and hdmaBucketRangeIndices
-		baseBucketRangeIndices.resize(bucketRanges.size());
 		paletteBucketRangeIndices.clear();
 		hdmaBucketRangeIndices.clear();
 		hdmaPopulationList.clear();
@@ -342,15 +338,18 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			// with current set of bucketRanges, generate current hdma table
 
 			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
+			fixed_vector<unsigned int, MaxBuckets, false> baseBucketRangeIndices(bucketRanges.size());
+			
 			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
 			eastl::sort(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(),
 				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineFirst > bucketRanges[b].scanlineFirst; });
-			availableHdmaIndices = baseBucketRangeIndices;
+			
+			fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices = baseBucketRangeIndices;
+			
 			// advance through the list of bucket ranges, finding candidates that can evict a color
 			unsigned char minScanline = MaxHeight;
 			unsigned char actionsOnScanline = 0;
-			// TODO before any further work can or should be pursued, this loop MUST be optimized. In particular, the "max_element/find_if" combo, and "erase".
-			// this currently takes 85% of all processing time on high-color-high-hdma images
+
 			for (auto bucketIndex : baseBucketRangeIndices)
 			{
 				// if we are about to apply a whole new minScanline, then move it and reset the actionsOnScanline back to zero
@@ -359,6 +358,11 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					minScanline = bucketRanges[bucketIndex].scanlineFirst;
 					actionsOnScanline = 0;
 				}
+
+				//////
+				// 
+				//////
+
 				// find the bucket range with the greatest last-scanline that is < our minimum scanline target
 				auto hdmaBucketRangeIter = eastl::max_element(
 					eastl::find_if(availableHdmaIndices.begin(), availableHdmaIndices.end(),
