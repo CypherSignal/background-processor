@@ -22,7 +22,6 @@ void processFile(const ProcessImageParams &params)
 		return;
 
 	processImage(params, storage);
-		
 	Concurrency::parallel_invoke(
 		// write out 15b quantized source
 		[&params, &storage]
@@ -112,7 +111,6 @@ int main(int argc, char** argv)
 	std::filesystem::path inFilePath = inFile.value();
 
 	ProcessImageParams params;
-	params.lowBitDepthPalette = false;
 	params.maxHdmaChannels = 8;
 	params.maxColors = 256;
 	params.outDirPath = outDirPath;
