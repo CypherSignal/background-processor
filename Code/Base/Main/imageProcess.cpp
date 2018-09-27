@@ -327,7 +327,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 	// first element is what bucket got evicted; second element is what bucket is populating the eviction
 	fixed_vector<pair<unsigned int, unsigned int>, (MaxHeight-1) * MaxHdmaChannels, false> hdmaPopulationList; 
 	
-	while (true)
+	while (paletteBucketRangeIndices.size() < ColorsToFind || hdmaBucketRangeIndices.size() < hdmaBucketRangeIndices.capacity())
 	{
 		// reset the list of baseBucketRangeIndices and hdmaBucketRangeIndices
 		paletteBucketRangeIndices.clear();
@@ -543,11 +543,6 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			IndexedImageBucketRange& newRange = bucketRanges.push_back();
 			newRange.setBucketRange(medianIter, bucketIter->end, out.srcImg.width);
 			bucketIter->setBucketRange(bucketIter->begin, medianIter, out.srcImg.width);
-		}
-		else
-		{
-			// paletteBucketRangeIndices and hdmaBucketRangeIndices are both maxed out - exit the loop
-			break;
 		}
 	}
 
