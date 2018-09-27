@@ -110,9 +110,24 @@ int main(int argc, char** argv)
 	std::filesystem::path outDirPath = outDir.value();
 	std::filesystem::path inFilePath = inFile.value();
 
+	const auto hdmaChannels = args.get<int>("hdmaChannels", 0);
+	if (hdmaChannels < 0 || hdmaChannels > 8)
+	{
+		std::cout << "Invalid number of hdma channels specified. Only values between 0 and 8 are accepted";
+		return 1;
+	}
+
+	const auto paletteSize = args.get<int>("paletteSize", 256);
+	if (paletteSize < 2 || paletteSize > 256)
+	{
+		std::cout << "Invalid palette size pecified. Only values between 2 and 256 are accepted";
+		return 1;
+	}
+
+
 	ProcessImageParams params;
-	params.maxHdmaChannels = 8;
-	params.maxColors = 256;
+	params.maxHdmaChannels = hdmaChannels;
+	params.maxColors = paletteSize;
 	params.outDirPath = outDirPath;
 	if (std::filesystem::is_regular_file(inFilePath))
 	{
