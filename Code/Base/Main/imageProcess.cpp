@@ -339,12 +339,14 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 
 			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
 			fixed_vector<unsigned int, MaxBuckets, false> baseBucketRangeIndices(bucketRanges.size());
-			
 			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
+			fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices = baseBucketRangeIndices;
+
 			eastl::sort(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(),
 				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineFirst > bucketRanges[b].scanlineFirst; });
-			
-			fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices = baseBucketRangeIndices;
+			eastl::sort(availableHdmaIndices.begin(), availableHdmaIndices.end(),
+				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineLast < bucketRanges[b].scanlineLast; });
+
 			
 			// advance through the list of bucket ranges, finding candidates that can evict a color
 			unsigned char minScanline = MaxHeight;
@@ -359,31 +361,23 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 					actionsOnScanline = 0;
 				}
 
-				//////
-				// 
-				//////
-
-				// find the bucket range with the greatest last-scanline that is < our minimum scanline target
-				auto hdmaBucketRangeIter = eastl::max_element(
-					eastl::find_if(availableHdmaIndices.begin(), availableHdmaIndices.end(),
-						[minScanline, &bucketRanges](unsigned int a) { return bucketRanges[a].scanlineLast < minScanline; }),
-					availableHdmaIndices.end(),
-					[minScanline, &bucketRanges](unsigned int a, unsigned int b)
-				{ return  bucketRanges[b].scanlineLast < minScanline && bucketRanges[b].scanlineLast > bucketRanges[a].scanlineLast; });
-
-				// if we could not find a candidate that we could replace, then we're a palette-bucket
-				if (hdmaBucketRangeIter == availableHdmaIndices.end() || hdmaBucketRangeIndices.size() == hdmaBucketRangeIndices.capacity())
+				// any availableHdmaIndices that are not fit for hdma candidates need to be removed
+				while (availableHdmaIndices.size() > 0 && bucketRanges[availableHdmaIndices.back()].scanlineLast >= minScanline)
 				{
-					paletteBucketRangeIndices.push_back(bucketIndex);
+					availableHdmaIndices.pop_back();
 				}
-				else // if we could find a candidate that we could replace, then we're an hdma-bucket
+
+				// we have an hdma candidate if the list of availableHdmaIndices still has a survivor, so track this bucket as hdma-able
+				if (availableHdmaIndices.size() > 0 && hdmaBucketRangeIndices.size() < hdmaBucketRangeIndices.capacity())
 				{
-					// remove the population-candidate from baseBucketList - this is now a bucket that will be HDMA'd into the palette.
-					// (note that hdmaBucketIndex is guaranteed to be after evictionIter, so that iterator is not invalidated)
-					auto hdmaBucketIndex = *hdmaBucketRangeIter;// (unsigned int)distance(availableHdmaIndices.begin(), hdmaBucketRangeIter);
+					auto hdmaBucketIndex = availableHdmaIndices.back();
 					hdmaBucketRangeIndices.push_back(bucketIndex);
 					hdmaPopulationList.push_back(make_pair(hdmaBucketIndex, bucketIndex));
-					availableHdmaIndices.erase(eastl::remove(availableHdmaIndices.begin(), availableHdmaIndices.end(), hdmaBucketIndex), availableHdmaIndices.end());
+					availableHdmaIndices.pop_back();
+				}
+				else // otherwise, this bucket has to go into the base palette
+				{
+					paletteBucketRangeIndices.push_back(bucketIndex);
 				}
 			
 				// mark the number of actions performed on our current minScanline
