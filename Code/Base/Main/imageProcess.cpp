@@ -3,10 +3,11 @@
 #include "imageprocess.h"
 #include "imageProcessIspc_ispc.h"
 
-#include <EASTL/sort.h>
-#include <EASTL/utility.h>
 #include <EASTL/array.h>
 #include <EASTL/bonus/tuple_vector.h>
+#include <EASTL/numeric.h>
+#include <EASTL/sort.h>
+#include <EASTL/utility.h>
 
 using namespace eastl;
 
@@ -249,28 +250,29 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	while (bucketRanges.size() < ColorsToFind)
 	{
 		auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
-			[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.deltaColor < b.deltaColor; });
+			[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b)
+			{ return a.deltaColor < b.deltaColor; });
 
 		IndexedImageDataIterator medianIter;
 		switch (bucketIter->channelDelta)
 		{
 		case 0:
 			// partition around red
-			medianIter = partition(bucketIter->begin, bucketIter->end, 
+			medianIter = eastl::partition(bucketIter->begin, bucketIter->end, 
 				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a) 
 				{ return get<0>(a) <= medianColor; });
 			break;
 		case 1:
 			// partition around green
-			medianIter = partition(bucketIter->begin, bucketIter->end,
+			medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
-				{ return  get<1>(a) <= medianColor; });
+				{ return get<1>(a) <= medianColor; });
 			break;
 		case 2:
 			// partition around blue
-			medianIter = partition(bucketIter->begin, bucketIter->end,
+			medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 				[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
-				{ return  get<2>(a) <= medianColor; });
+				{ return get<2>(a) <= medianColor; });
 			break;
 		};
 
@@ -339,13 +341,15 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 
 			// generate a list of buckets to be used for the base palette, and a list of buckets to be used as replacements via hdma
 			fixed_vector<unsigned int, MaxBuckets, false> baseBucketRangeIndices(bucketRanges.size());
-			eastl::generate(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), [n = 0]()mutable{return n++; });
+			eastl::iota(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(), 0);
 			fixed_vector<unsigned int, MaxBuckets, false> availableHdmaIndices = baseBucketRangeIndices;
 
 			eastl::sort(baseBucketRangeIndices.begin(), baseBucketRangeIndices.end(),
-				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineFirst > bucketRanges[b].scanlineFirst; });
+				[&bucketRanges](unsigned int a, unsigned int b)
+				{ return bucketRanges[a].scanlineFirst > bucketRanges[b].scanlineFirst; });
 			eastl::sort(availableHdmaIndices.begin(), availableHdmaIndices.end(),
-				[&bucketRanges](unsigned int a, unsigned int b) { return bucketRanges[a].scanlineLast < bucketRanges[b].scanlineLast; });
+				[&bucketRanges](unsigned int a, unsigned int b)
+				{ return bucketRanges[a].scanlineLast < bucketRanges[b].scanlineLast; });
 
 			
 			// advance through the list of bucket ranges, finding candidates that can evict a color
@@ -397,7 +401,8 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			// first bucket all of the colors by finding which bucket has the greatest delta across each channel,
 			// and split the bucket about the median color of each bucket
 			auto bucketIter = eastl::max_element(bucketRanges.begin(), bucketRanges.end(),
-				[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b) { return a.deltaColor < b.deltaColor; });
+				[](const IndexedImageBucketRange& a, const IndexedImageBucketRange& b)
+				{ return a.deltaColor < b.deltaColor; });
 
 			// if the bucket with the biggest deltaColor was 0, we must have perfectly bucketed everything, so we're done
 			if (bucketIter->deltaColor == 0)
@@ -408,21 +413,21 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			{
 			case 0:
 				// partition around red
-				medianIter = partition(bucketIter->begin, bucketIter->end,
+				medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
-				{ return get<0>(a) <= medianColor; });
+					{ return get<0>(a) <= medianColor; });
 				break;
 			case 1:
 				// partition around green
-				medianIter = partition(bucketIter->begin, bucketIter->end,
+				medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
-				{ return get<1>(a) <= medianColor; });
+					{ return get<1>(a) <= medianColor; });
 				break;
 			case 2:
 				// partition around blue
-				medianIter = partition(bucketIter->begin, bucketIter->end,
+				medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 					[medianColor = bucketIter->midColor](IndexedImageData::const_reference_tuple a)
-				{ return get<2>(a) <= medianColor; });
+					{ return get<2>(a) <= medianColor; });
 				break;
 			};
 
@@ -537,7 +542,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			
 			// partition bucket about scanline and continue
 			//IndexedImageBucketRange& bucketToSplit = bucketRanges[*bucketIter];
-			auto medianIter = partition(bucketIter->begin, bucketIter->end,
+			auto medianIter = eastl::partition(bucketIter->begin, bucketIter->end,
 				[scanlineSplit = bucketIter->scanlineGapEnd, width = out.srcImg.width](IndexedImageData::const_reference_tuple a)
 				{ return get<const unsigned int&>(a) / width < scanlineSplit; });
 			IndexedImageBucketRange& newRange = bucketRanges.push_back();
@@ -559,10 +564,9 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		auto bucket = bucketRanges[baseBucketRangeIndex];
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
 		out.palettizedImg.palette.push_back(bucket.getAverageColor());
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
-		{
-			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
-		});
+		eastl::for_each(bucket.begin, bucket.end,
+			[&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
+			{ out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx; });
 	}
 
 	// next, go through the HDMA population list, to do two things:
@@ -602,9 +606,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 				{
 					auto hdmaPopulationIter = eastl::find_if(hdmaPopulationList.begin(), hdmaPopulationList.end(),
 						[bucketIndexToEvict](const pair<unsigned int, unsigned int>& hdmaPopulation)
-					{
-						return hdmaPopulation.second == bucketIndexToEvict;
-					});
+						{ return hdmaPopulation.second == bucketIndexToEvict; });
 					bucketIndexToEvict = hdmaPopulationIter->first;
 				}
 				else
@@ -637,10 +639,9 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			++previousScanline;
 		}
 
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
-		{
-			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
-		});
+		eastl::for_each(bucket.begin, bucket.end,
+			[&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
+			{ out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx; });
 	}
 
 	for (auto& hdmaActionColumn : hdmaActions)
