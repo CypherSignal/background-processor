@@ -223,6 +223,14 @@ struct IndexedImageBucketRange
 		unsigned short snesR = ((unsigned short(accumulatedR / bucketSize) & 0xf8) >> 3);
 		return (snesB | snesG | snesR);
 	}
+
+	void applyPaletteIndex(eastl::vector<unsigned char>& data, unsigned char paletteIdx)
+	{
+		for (auto pxIter = begin; pxIter != end; ++pxIter)
+		{
+			data[get<unsigned int&>(*pxIter)] = paletteIdx;
+		}
+	}
 };
 
 void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStorage& out)
@@ -292,10 +300,7 @@ void quantizeToSinglePalette(const ProcessImageParams& params, ProcessImageStora
 	{
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
 		out.palettizedImg.palette.push_back(bucket.getAverageColor());
-		eastl::for_each(bucket.begin, bucket.end, [&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
-		{
-			out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx;
-		});
+		bucket.applyPaletteIndex(out.palettizedImg.data, paletteIdx);
 	}
 }
 
@@ -564,9 +569,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 		auto bucket = bucketRanges[baseBucketRangeIndex];
 		auto paletteIdx = (unsigned char)(out.palettizedImg.palette.size());
 		out.palettizedImg.palette.push_back(bucket.getAverageColor());
-		eastl::for_each(bucket.begin, bucket.end,
-			[&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
-			{ out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx; });
+		bucket.applyPaletteIndex(out.palettizedImg.data, paletteIdx);
 	}
 
 	// next, go through the HDMA population list, to do two things:
@@ -639,9 +642,7 @@ void quantizeToSinglePaletteWithHdma(const ProcessImageParams& params, ProcessIm
 			++previousScanline;
 		}
 
-		eastl::for_each(bucket.begin, bucket.end,
-			[&paletteIdx, &out](IndexedImageData::const_reference_tuple px)
-			{ out.palettizedImg.data[get<const unsigned int&>(px)] = paletteIdx; });
+		bucket.applyPaletteIndex(out.palettizedImg.data, paletteIdx);
 	}
 
 	for (auto& hdmaActionColumn : hdmaActions)
